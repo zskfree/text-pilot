@@ -4,8 +4,8 @@ mod settings;
 mod startup;
 
 use prompt_optimizer::api::ApiClient;
-use prompt_optimizer::config::{self, Config, ConfigError};
-use prompt_optimizer::hotkey::{parse_hotkey, HotkeyKind, HotkeySpec};
+use prompt_optimizer::config::{self, Config, ConfigError, CustomAction};
+use prompt_optimizer::hotkey::{parse_hotkey, HotkeyKind};
 use std::ffi::c_void;
 use std::fmt::{Display, Formatter};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -58,14 +58,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 const APP_NAME: PCWSTR = w!("PromptOptimizer");
 const WINDOW_CLASS: PCWSTR = w!("PromptOptimizer.HiddenWindow");
 const STATUS_WINDOW_CLASS: PCWSTR = w!("PromptOptimizer.StatusPopup");
-const OPTIMIZE_HOTKEY_ID: i32 = 0x504F;
-const TRANSLATE_HOTKEY_ID: i32 = 0x5050;
+const BASE_HOTKEY_ID: i32 = 0x5000;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum TaskAction {
-    Optimize = 1,
-    Translate = 2,
-}
+use prompt_optimizer::api::ActionTier;
+
 const TRAY_ID: u32 = 1;
 const WM_TRAY: u32 = WM_APP + 1;
 const WM_WORKER_DONE: u32 = WM_APP + 2;
@@ -79,6 +75,7 @@ const STATUS_MAX_WIDTH: i32 = 300;
 const ICON_FILE: &[u8] = include_bytes!("../assets/prompt-optimizer.ico");
 const GESTURE_TIMER_ID: usize = 2;
 const GESTURE_INTERVAL_MS: u32 = 520;
+const TIER_DISPATCH_WINDOW_MS: u32 = 280;
 
 #[derive(Clone, Copy)]
 enum PopupSide {
@@ -108,15 +105,40 @@ static STATUS_POPUP: Mutex<StatusPopupState> = Mutex::new(StatusPopupState {
     anchor: None,
 });
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct GestureSlot {
-    action: u32,
-    required_taps: u8,
+    double_action_index: Option<u32>,
+    triple_action_index: Option<u32>,
     virtual_key: u32,
+    double_has_deep_tier: bool,
     taps: u8,
     key_down: bool,
     last_tap_time: u32,
     sequence: u64,
+}
+
+impl GestureSlot {
+    fn has_triple_target(&self) -> bool {
+        self.triple_action_index.is_some()
+            || (self.double_action_index.is_some() && self.double_has_deep_tier)
+    }
+
+    fn action_for_tier(&self, tier: ActionTier) -> Option<(u32, ActionTier)> {
+        match tier {
+            ActionTier::Standard => self
+                .double_action_index
+                .map(|index| (index, ActionTier::Standard)),
+            ActionTier::Deep => self
+                .triple_action_index
+                .map(|index| (index, ActionTier::Deep))
+                .or_else(|| {
+                    self.double_has_deep_tier
+                        .then_some(self.double_action_index)
+                        .flatten()
+                        .map(|index| (index, ActionTier::Deep))
+                }),
+        }
+    }
 }
 
 struct GestureHookState {
@@ -130,8 +152,8 @@ fn advance_gesture_tap(
     current_taps: u8,
     last_tap_time: u32,
     now: u32,
-    required_taps: u8,
-) -> (u8, u8, bool) {
+    has_triple_tier: bool,
+) -> (u8, u8, Option<ActionTier>) {
     let expired = current_taps > 0 && now.wrapping_sub(last_tap_time) > GESTURE_INTERVAL_MS;
     let replay = if expired { current_taps } else { 0 };
     let taps = if expired {
@@ -139,27 +161,46 @@ fn advance_gesture_tap(
     } else {
         current_taps.saturating_add(1)
     };
-    if taps >= required_taps {
-        (0, replay, true)
+    if taps >= 3 {
+        (0, replay, Some(ActionTier::Deep))
+    } else if taps == 2 && !has_triple_tier {
+        (0, replay, Some(ActionTier::Standard))
     } else {
-        (taps, replay, false)
+        (taps, replay, None)
     }
 }
 
-fn take_pending_replays(slots: &mut [GestureSlot], except_action: Option<u32>) -> Vec<(u8, u32)> {
+type GestureDispatch = Option<(u32, ActionTier)>;
+type GestureReplays = Vec<(u8, u32)>;
+
+fn process_pending_gestures(
+    slots: &mut [GestureSlot],
+    except_virtual_key: Option<u32>,
+) -> (GestureDispatch, GestureReplays) {
+    let mut triggered = None;
     let mut pending = Vec::new();
     for slot in slots {
-        if slot.taps > 0 && except_action != Some(slot.action) {
+        if slot.taps == 2 && except_virtual_key != Some(slot.virtual_key) {
+            if triggered.is_none() {
+                triggered = slot.action_for_tier(ActionTier::Standard);
+            }
+            if triggered.is_none() {
+                pending.push((slot.sequence, slot.taps, slot.virtual_key));
+            }
+            slot.taps = 0;
+            slot.sequence = 0;
+        } else if slot.taps == 1 && except_virtual_key != Some(slot.virtual_key) {
             pending.push((slot.sequence, slot.taps, slot.virtual_key));
             slot.taps = 0;
             slot.sequence = 0;
         }
     }
     pending.sort_by_key(|(sequence, _, _)| *sequence);
-    pending
+    let replays = pending
         .into_iter()
         .map(|(_, taps, virtual_key)| (taps, virtual_key))
-        .collect()
+        .collect();
+    (triggered, replays)
 }
 
 static GESTURE_HOOK: Mutex<GestureHookState> = Mutex::new(GestureHookState {
@@ -217,13 +258,10 @@ impl Drop for ComApartment {
 }
 
 enum WorkerCommand {
-    Optimize {
+    ExecuteAction {
         task_id: u64,
-        config: Config,
-        text: String,
-    },
-    Translate {
-        task_id: u64,
+        action: CustomAction,
+        tier: ActionTier,
         config: Config,
         text: String,
     },
@@ -235,16 +273,18 @@ enum WorkerCommand {
         settings_hwnd: isize,
         config: Config,
     },
+    TestActionApi {
+        settings_hwnd: isize,
+        action: CustomAction,
+        config: Config,
+    },
     Shutdown,
 }
 
 enum WorkerResult {
-    Optimize {
+    ExecuteAction {
         task_id: u64,
-        result: Result<String, String>,
-    },
-    Translate {
-        task_id: u64,
+        action_name: String,
         result: Result<String, String>,
     },
     TestApi {
@@ -253,6 +293,11 @@ enum WorkerResult {
     },
     TestTranslationApi {
         settings_hwnd: isize,
+        result: Result<(), String>,
+    },
+    TestActionApi {
+        settings_hwnd: isize,
+        action_name: String,
         result: Result<(), String>,
     },
 }
@@ -261,9 +306,7 @@ struct AppState {
     config: Config,
     config_path: PathBuf,
     exe_path: PathBuf,
-    hotkey: HotkeySpec,
-    translate_hotkey: HotkeySpec,
-    hotkey_registered: bool,
+    hotkeys_registered: bool,
     busy: bool,
     next_task_id: u64,
     active_task_id: Option<u64>,
@@ -274,11 +317,19 @@ struct AppState {
     settings_hwnd: HWND,
 }
 
-fn idle_tooltip_text(optimize_hotkey: &HotkeySpec, translate_hotkey: &HotkeySpec) -> String {
-    format!(
-        "运行中 | 优化: {} | 翻译: {}",
-        optimize_hotkey.display, translate_hotkey.display
-    )
+fn idle_tooltip_text(config: &Config) -> String {
+    let active_actions: Vec<String> = config
+        .actions
+        .iter()
+        .filter(|a| a.enabled)
+        .take(3)
+        .map(|a| format!("{}: {}", a.name, a.hotkey))
+        .collect();
+    if active_actions.is_empty() {
+        "PromptOptimizer (未启用快捷键)".into()
+    } else {
+        format!("运行中 | {}", active_actions.join(" | "))
+    }
 }
 
 pub fn run() -> Result<(), AppError> {
@@ -300,9 +351,6 @@ pub fn run() -> Result<(), AppError> {
     let exe_path = std::env::current_exe().map_err(|error| AppError(error.to_string()))?;
     let config_path = exe_path.with_file_name("config.json");
     let (config, first_run, startup_warning) = load_startup_config(&config_path)?;
-    let hotkey = parse_hotkey(&config.hotkey).map_err(|error| AppError(error.to_string()))?;
-    let translate_hotkey =
-        parse_hotkey(&config.translation_hotkey).map_err(|error| AppError(error.to_string()))?;
 
     let instance = HINSTANCE(unsafe { GetModuleHandleW(None) }?.0);
     register_window_class(instance)?;
@@ -332,9 +380,7 @@ pub fn run() -> Result<(), AppError> {
         config,
         config_path,
         exe_path,
-        hotkey,
-        translate_hotkey,
-        hotkey_registered: false,
+        hotkeys_registered: false,
         busy: false,
         next_task_id: 1,
         active_task_id: None,
@@ -349,9 +395,8 @@ pub fn run() -> Result<(), AppError> {
     }
 
     add_tray_icon(hwnd, &state)?;
-    state.hotkey_registered =
-        activate_both_hotkeys(hwnd, &state.hotkey, &state.translate_hotkey).is_ok();
-    if !state.hotkey_registered {
+    state.hotkeys_registered = activate_hotkeys(hwnd, &state.config).is_ok();
+    if !state.hotkeys_registered {
         notify(
             hwnd,
             state.icon,
@@ -398,9 +443,8 @@ pub fn run() -> Result<(), AppError> {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
     }
     let _ = state.worker_tx.send(WorkerCommand::Shutdown);
-    if state.hotkey_registered {
-        deactivate_hotkey(hwnd, &state.hotkey, TaskAction::Optimize);
-        deactivate_hotkey(hwnd, &state.translate_hotkey, TaskAction::Translate);
+    if state.hotkeys_registered {
+        deactivate_hotkeys(hwnd, &state.config);
     }
     delete_tray_icon(hwnd);
     unsafe {
@@ -487,24 +531,26 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
             return LRESULT(0);
         }
         match message {
-            WM_HOTKEY if wparam.0 == OPTIMIZE_HOTKEY_ID as usize => {
-                on_hotkey(hwnd, state, TaskAction::Optimize);
-                return LRESULT(0);
-            }
-            WM_HOTKEY if wparam.0 == TRANSLATE_HOTKEY_ID as usize => {
-                on_hotkey(hwnd, state, TaskAction::Translate);
+            WM_HOTKEY => {
+                let id = wparam.0 as i32;
+                if id >= BASE_HOTKEY_ID {
+                    let action_index = (id - BASE_HOTKEY_ID) as usize;
+                    on_action_triggered(hwnd, state, action_index, ActionTier::Standard);
+                }
                 return LRESULT(0);
             }
             WM_GESTURE_HOTKEY => {
-                let action = match wparam.0 {
-                    2 => TaskAction::Translate,
-                    _ => TaskAction::Optimize,
+                let action_index = wparam.0;
+                let tier = if lparam.0 == 1 {
+                    ActionTier::Deep
+                } else {
+                    ActionTier::Standard
                 };
-                on_hotkey(hwnd, state, action);
+                on_action_triggered(hwnd, state, action_index, tier);
                 return LRESULT(0);
             }
             WM_TIMER if wparam.0 == GESTURE_TIMER_ID => {
-                replay_pending_gesture(hwnd);
+                handle_gesture_timer(hwnd);
                 return LRESULT(0);
             }
             WM_TRAY => {
@@ -588,6 +634,39 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
                 (*request).error = None;
                 return LRESULT(1);
             }
+            settings::WM_TEST_ACTION_API => {
+                let request = lparam.0 as *mut settings::ActionApiTestRequest;
+                if request.is_null() {
+                    return LRESULT(0);
+                }
+                if state.busy {
+                    (*request).error = Some("后台任务正在运行，请稍候".into());
+                    return LRESULT(0);
+                }
+                let settings_hwnd = wparam.0 as isize;
+                let action_name = (*request).action.name.clone();
+                state.busy = true;
+                update_tooltip(
+                    hwnd,
+                    state.icon,
+                    &format!("正在测试「{}」API…", action_name),
+                );
+                if state
+                    .worker_tx
+                    .send(WorkerCommand::TestActionApi {
+                        settings_hwnd,
+                        action: (*request).action.clone(),
+                        config: (*request).config.clone(),
+                    })
+                    .is_err()
+                {
+                    state.busy = false;
+                    (*request).error = Some("API 工作线程不可用".into());
+                    return LRESULT(0);
+                }
+                (*request).error = None;
+                return LRESULT(1);
+            }
             settings::WM_SETTINGS_CLOSED => {
                 if state.settings_hwnd.0 as usize == wparam.0 {
                     state.settings_hwnd = HWND::default();
@@ -607,7 +686,12 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
     DefWindowProcW(hwnd, message, wparam, lparam)
 }
 
-unsafe fn on_hotkey(hwnd: HWND, state: &mut AppState, action: TaskAction) {
+unsafe fn on_action_triggered(
+    hwnd: HWND,
+    state: &mut AppState,
+    action_index: usize,
+    tier: ActionTier,
+) {
     if state.busy {
         notify(
             hwnd,
@@ -616,6 +700,12 @@ unsafe fn on_hotkey(hwnd: HWND, state: &mut AppState, action: TaskAction) {
             "后台任务正在运行，请稍候",
             false,
         );
+        return;
+    }
+    let Some(action) = state.config.actions.get(action_index).cloned() else {
+        return;
+    };
+    if !action.enabled {
         return;
     }
     if state
@@ -638,28 +728,30 @@ unsafe fn on_hotkey(hwnd: HWND, state: &mut AppState, action: TaskAction) {
             state.next_task_id = state.next_task_id.wrapping_add(1).max(1);
             state.busy = true;
             state.active_task_id = Some(task_id);
-            let (tooltip_text, popup_text, command) = match action {
-                TaskAction::Optimize => (
-                    "正在优化…",
-                    "优化中…",
-                    WorkerCommand::Optimize {
-                        task_id,
-                        config: state.config.clone(),
-                        text,
-                    },
+
+            let action_name = action.name.clone();
+            let (tooltip_text, popup_text) = match tier {
+                ActionTier::Standard => (
+                    format!("正在{}…", action_name),
+                    format!("{}中…", action_name),
                 ),
-                TaskAction::Translate => (
-                    "正在翻译…",
-                    "翻译中…",
-                    WorkerCommand::Translate {
-                        task_id,
-                        config: state.config.clone(),
-                        text,
-                    },
+                ActionTier::Deep => (
+                    format!("正在{} (深度)…", action_name),
+                    format!("{}中 (深度)…", action_name),
                 ),
             };
-            update_tooltip(hwnd, state.icon, tooltip_text);
-            show_status_popup(popup_text, false, true);
+
+            update_tooltip(hwnd, state.icon, &tooltip_text);
+            show_status_popup(&popup_text, false, true);
+
+            let command = WorkerCommand::ExecuteAction {
+                task_id,
+                action,
+                tier,
+                config: state.config.clone(),
+                text,
+            };
+
             if state.worker_tx.send(command).is_err() {
                 state.busy = false;
                 state.active_task_id = None;
@@ -682,17 +774,17 @@ unsafe fn on_worker_done(hwnd: HWND, state: &mut AppState) {
         return;
     };
     match result {
-        WorkerResult::Optimize { task_id, result } => {
+        WorkerResult::ExecuteAction {
+            task_id,
+            action_name,
+            result,
+        } => {
             if state.active_task_id != Some(task_id) {
                 return;
             }
             state.busy = false;
             state.active_task_id = None;
-            update_tooltip(
-                hwnd,
-                state.icon,
-                &idle_tooltip_text(&state.hotkey, &state.translate_hotkey),
-            );
+            update_tooltip(hwnd, state.icon, &idle_tooltip_text(&state.config));
             match result {
                 Ok(text) => match clipboard::write_text(&text) {
                     Ok(()) => {
@@ -705,33 +797,13 @@ unsafe fn on_worker_done(hwnd: HWND, state: &mut AppState) {
                         notify(hwnd, state.icon, "写入剪贴板失败", &error.to_string(), true)
                     }
                 },
-                Err(error) => notify(hwnd, state.icon, "优化失败", &error, true),
-            }
-        }
-        WorkerResult::Translate { task_id, result } => {
-            if state.active_task_id != Some(task_id) {
-                return;
-            }
-            state.busy = false;
-            state.active_task_id = None;
-            update_tooltip(
-                hwnd,
-                state.icon,
-                &idle_tooltip_text(&state.hotkey, &state.translate_hotkey),
-            );
-            match result {
-                Ok(text) => match clipboard::write_text(&text) {
-                    Ok(()) => {
-                        if state.config.play_sound {
-                            let _ = MessageBeep(MB_OK);
-                        }
-                        notify(hwnd, state.icon, "PromptOptimizer", "已复制", false);
-                    }
-                    Err(error) => {
-                        notify(hwnd, state.icon, "写入剪贴板失败", &error.to_string(), true)
-                    }
-                },
-                Err(error) => notify(hwnd, state.icon, "翻译失败", &error, true),
+                Err(error) => notify(
+                    hwnd,
+                    state.icon,
+                    &format!("{}失败", action_name),
+                    &error,
+                    true,
+                ),
             }
         }
         WorkerResult::TestApi {
@@ -739,11 +811,7 @@ unsafe fn on_worker_done(hwnd: HWND, state: &mut AppState) {
             result,
         } => {
             state.busy = false;
-            update_tooltip(
-                hwnd,
-                state.icon,
-                &idle_tooltip_text(&state.hotkey, &state.translate_hotkey),
-            );
+            update_tooltip(hwnd, state.icon, &idle_tooltip_text(&state.config));
             let settings_hwnd = HWND(settings_hwnd as *mut c_void);
             if state.settings_hwnd == settings_hwnd && IsWindow(Some(settings_hwnd)).as_bool() {
                 settings::complete_api_test(settings_hwnd, result);
@@ -754,14 +822,22 @@ unsafe fn on_worker_done(hwnd: HWND, state: &mut AppState) {
             result,
         } => {
             state.busy = false;
-            update_tooltip(
-                hwnd,
-                state.icon,
-                &idle_tooltip_text(&state.hotkey, &state.translate_hotkey),
-            );
+            update_tooltip(hwnd, state.icon, &idle_tooltip_text(&state.config));
             let settings_hwnd = HWND(settings_hwnd as *mut c_void);
             if state.settings_hwnd == settings_hwnd && IsWindow(Some(settings_hwnd)).as_bool() {
                 settings::complete_translation_api_test(settings_hwnd, result);
+            }
+        }
+        WorkerResult::TestActionApi {
+            settings_hwnd,
+            action_name,
+            result,
+        } => {
+            state.busy = false;
+            update_tooltip(hwnd, state.icon, &idle_tooltip_text(&state.config));
+            let settings_hwnd = HWND(settings_hwnd as *mut c_void);
+            if state.settings_hwnd == settings_hwnd && IsWindow(Some(settings_hwnd)).as_bool() {
+                settings::complete_action_api_test(settings_hwnd, &action_name, result);
             }
         }
     }
@@ -856,95 +932,46 @@ unsafe fn apply_config(
         return Err("后台任务进行中，请完成后再保存配置".into());
     }
     new_config.validate().map_err(|error| error.to_string())?;
-    let new_hotkey = parse_hotkey(&new_config.hotkey).map_err(|error| error.to_string())?;
-    let new_translate_hotkey =
-        parse_hotkey(&new_config.translation_hotkey).map_err(|error| error.to_string())?;
-    let old_hotkey = state.hotkey.clone();
-    let old_translate_hotkey = state.translate_hotkey.clone();
-    let old_registered = state.hotkey_registered;
-    let old_auto_start = state.config.auto_start;
-    let hotkeys_changed =
-        new_hotkey != old_hotkey || new_translate_hotkey != old_translate_hotkey || !old_registered;
 
-    if hotkeys_changed {
-        if let Err(error) = switch_hotkeys_atomic(
-            hwnd,
-            &old_hotkey,
-            &old_translate_hotkey,
-            &new_hotkey,
-            &new_translate_hotkey,
-            old_registered,
-        ) {
-            state.hotkey_registered = old_registered;
-            return Err(format!("新热键无法注册：{error}"));
+    let old_config = state.config.clone();
+    let old_registered = state.hotkeys_registered;
+    let old_auto_start = state.config.auto_start;
+
+    if old_registered {
+        deactivate_hotkeys(hwnd, &old_config);
+    }
+    if let Err(error) = activate_hotkeys(hwnd, &new_config) {
+        if old_registered {
+            let _ = activate_hotkeys(hwnd, &old_config);
         }
+        state.hotkeys_registered = old_registered;
+        return Err(format!("新热键注册失败：{error}"));
     }
 
     if let Err(error) = startup::set_auto_start(new_config.auto_start, &state.exe_path) {
-        rollback_hotkeys(
-            hwnd,
-            state,
-            &new_hotkey,
-            &new_translate_hotkey,
-            &old_hotkey,
-            &old_translate_hotkey,
-            hotkeys_changed,
-            old_registered,
-        );
+        deactivate_hotkeys(hwnd, &new_config);
+        if old_registered {
+            let _ = activate_hotkeys(hwnd, &old_config);
+        }
         let _ = startup::set_auto_start(old_auto_start, &state.exe_path);
         return Err(format!("开机自启设置失败：{error}"));
     }
 
     if persist {
         if let Err(error) = config::save(&state.config_path, &new_config) {
+            deactivate_hotkeys(hwnd, &new_config);
+            if old_registered {
+                let _ = activate_hotkeys(hwnd, &old_config);
+            }
             let _ = startup::set_auto_start(old_auto_start, &state.exe_path);
-            rollback_hotkeys(
-                hwnd,
-                state,
-                &new_hotkey,
-                &new_translate_hotkey,
-                &old_hotkey,
-                &old_translate_hotkey,
-                hotkeys_changed,
-                old_registered,
-            );
             return Err(error.to_string());
         }
     }
 
     state.config = new_config;
-    state.hotkey = new_hotkey;
-    state.translate_hotkey = new_translate_hotkey;
-    state.hotkey_registered = if hotkeys_changed {
-        true
-    } else {
-        old_registered
-    };
-    update_tooltip(
-        hwnd,
-        state.icon,
-        &idle_tooltip_text(&state.hotkey, &state.translate_hotkey),
-    );
+    state.hotkeys_registered = true;
+    update_tooltip(hwnd, state.icon, &idle_tooltip_text(&state.config));
     Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-unsafe fn rollback_hotkeys(
-    hwnd: HWND,
-    state: &mut AppState,
-    new_opt: &HotkeySpec,
-    new_trans: &HotkeySpec,
-    old_opt: &HotkeySpec,
-    old_trans: &HotkeySpec,
-    hotkeys_changed: bool,
-    old_registered: bool,
-) {
-    if hotkeys_changed {
-        deactivate_hotkey(hwnd, new_opt, TaskAction::Optimize);
-        deactivate_hotkey(hwnd, new_trans, TaskAction::Translate);
-        state.hotkey_registered =
-            old_registered && activate_both_hotkeys(hwnd, old_opt, old_trans).is_ok();
-    }
 }
 
 fn start_worker(
@@ -956,18 +983,25 @@ fn start_worker(
         let client = ApiClient::new();
         while let Ok(command) = command_rx.recv() {
             match command {
-                WorkerCommand::Optimize {
+                WorkerCommand::ExecuteAction {
                     task_id,
+                    action,
+                    tier,
                     config,
                     text,
                 } => {
+                    let action_name = action.name.clone();
                     let result = recover_worker_operation(|| {
                         client
-                            .optimize_request(&config, &text, task_id)
+                            .execute_action_request(&config, &action, tier, &text, task_id)
                             .map_err(|error| error.to_string())
                     });
                     if result_tx
-                        .send(WorkerResult::Optimize { task_id, result })
+                        .send(WorkerResult::ExecuteAction {
+                            task_id,
+                            action_name,
+                            result,
+                        })
                         .is_err()
                     {
                         break;
@@ -1000,27 +1034,6 @@ fn start_worker(
                         let _ = PostMessageW(Some(hwnd), WM_WORKER_DONE, WPARAM(0), LPARAM(0));
                     }
                 }
-                WorkerCommand::Translate {
-                    task_id,
-                    config,
-                    text,
-                } => {
-                    let result = recover_worker_operation(|| {
-                        client
-                            .translate_request(&config, &text, task_id)
-                            .map_err(|error| error.to_string())
-                    });
-                    if result_tx
-                        .send(WorkerResult::Translate { task_id, result })
-                        .is_err()
-                    {
-                        break;
-                    }
-                    unsafe {
-                        let hwnd = HWND(hwnd_raw as *mut c_void);
-                        let _ = PostMessageW(Some(hwnd), WM_WORKER_DONE, WPARAM(0), LPARAM(0));
-                    }
-                }
                 WorkerCommand::TestTranslationApi {
                     settings_hwnd,
                     config,
@@ -1033,6 +1046,32 @@ fn start_worker(
                     if result_tx
                         .send(WorkerResult::TestTranslationApi {
                             settings_hwnd,
+                            result,
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                    unsafe {
+                        let hwnd = HWND(hwnd_raw as *mut c_void);
+                        let _ = PostMessageW(Some(hwnd), WM_WORKER_DONE, WPARAM(0), LPARAM(0));
+                    }
+                }
+                WorkerCommand::TestActionApi {
+                    settings_hwnd,
+                    action,
+                    config,
+                } => {
+                    let action_name = action.name.clone();
+                    let result = recover_worker_operation(|| {
+                        client
+                            .test_action_connection(&config, &action)
+                            .map_err(|error| error.to_string())
+                    });
+                    if result_tx
+                        .send(WorkerResult::TestActionApi {
+                            settings_hwnd,
+                            action_name,
                             result,
                         })
                         .is_err()
@@ -1058,87 +1097,61 @@ where
         .unwrap_or_else(|_| Err("后台任务发生异常，已恢复，可重新触发快捷键".into()))
 }
 
-fn activate_both_hotkeys(
-    hwnd: HWND,
-    opt_hotkey: &HotkeySpec,
-    trans_hotkey: &HotkeySpec,
-) -> Result<(), WindowsError> {
-    activate_hotkey(hwnd, opt_hotkey, TaskAction::Optimize)?;
-    if let Err(error) = activate_hotkey(hwnd, trans_hotkey, TaskAction::Translate) {
-        deactivate_hotkey(hwnd, opt_hotkey, TaskAction::Optimize);
-        return Err(error);
-    }
-    Ok(())
-}
-
-fn switch_hotkeys_atomic(
-    hwnd: HWND,
-    old_opt: &HotkeySpec,
-    old_trans: &HotkeySpec,
-    new_opt: &HotkeySpec,
-    new_trans: &HotkeySpec,
-    old_registered: bool,
-) -> Result<(), WindowsError> {
-    if old_registered {
-        deactivate_hotkey(hwnd, old_opt, TaskAction::Optimize);
-        deactivate_hotkey(hwnd, old_trans, TaskAction::Translate);
-    }
-    if let Err(error) = activate_hotkey(hwnd, new_opt, TaskAction::Optimize) {
-        if old_registered {
-            let _ = activate_both_hotkeys(hwnd, old_opt, old_trans);
-        }
-        return Err(error);
-    }
-    if let Err(error) = activate_hotkey(hwnd, new_trans, TaskAction::Translate) {
-        deactivate_hotkey(hwnd, new_opt, TaskAction::Optimize);
-        if old_registered {
-            let _ = activate_both_hotkeys(hwnd, old_opt, old_trans);
-        }
-        return Err(error);
-    }
-    Ok(())
-}
-
-fn activate_hotkey(
-    hwnd: HWND,
-    hotkey: &HotkeySpec,
-    action: TaskAction,
-) -> Result<(), WindowsError> {
-    match hotkey.kind {
-        HotkeyKind::Chord {
-            modifiers,
-            virtual_key,
-        } => unsafe {
-            let id = match action {
-                TaskAction::Optimize => OPTIMIZE_HOTKEY_ID,
-                TaskAction::Translate => TRANSLATE_HOTKEY_ID,
+fn activate_hotkeys(hwnd: HWND, config: &Config) -> Result<(), WindowsError> {
+    let result = (|| {
+        for (index, action) in config.actions.iter().enumerate() {
+            if !action.enabled {
+                continue;
+            }
+            let Ok(spec) = parse_hotkey(&action.hotkey) else {
+                continue;
             };
-            RegisterHotKey(Some(hwnd), id, HOT_KEY_MODIFIERS(modifiers), virtual_key)
-        },
-        HotkeyKind::CtrlMultiTap { taps, virtual_key } => {
-            install_gesture_hook_slot(hwnd, action, taps, virtual_key)
+            match spec.kind {
+                HotkeyKind::Chord {
+                    modifiers,
+                    virtual_key,
+                } => unsafe {
+                    let id = BASE_HOTKEY_ID + index as i32;
+                    RegisterHotKey(Some(hwnd), id, HOT_KEY_MODIFIERS(modifiers), virtual_key)?;
+                },
+                HotkeyKind::CtrlMultiTap { taps, virtual_key } => {
+                    install_gesture_hook_slot(
+                        hwnd,
+                        index as u32,
+                        virtual_key,
+                        taps,
+                        !action.triple_prompt.trim().is_empty(),
+                    )?;
+                }
+            }
         }
+        Ok(())
+    })();
+    if result.is_err() {
+        deactivate_hotkeys(hwnd, config);
     }
+    result
 }
 
-fn deactivate_hotkey(hwnd: HWND, hotkey: &HotkeySpec, action: TaskAction) {
-    match hotkey.kind {
-        HotkeyKind::Chord { .. } => unsafe {
-            let id = match action {
-                TaskAction::Optimize => OPTIMIZE_HOTKEY_ID,
-                TaskAction::Translate => TRANSLATE_HOTKEY_ID,
-            };
-            let _ = UnregisterHotKey(Some(hwnd), id);
-        },
-        HotkeyKind::CtrlMultiTap { .. } => uninstall_gesture_hook_slot(hwnd, action),
+fn deactivate_hotkeys(hwnd: HWND, config: &Config) {
+    for (index, action) in config.actions.iter().enumerate() {
+        if let Ok(spec) = parse_hotkey(&action.hotkey) {
+            if let HotkeyKind::Chord { .. } = spec.kind {
+                unsafe {
+                    let _ = UnregisterHotKey(Some(hwnd), BASE_HOTKEY_ID + index as i32);
+                }
+            }
+        }
     }
+    uninstall_all_gesture_hook_slots(hwnd);
 }
 
 fn install_gesture_hook_slot(
     hwnd: HWND,
-    action: TaskAction,
-    required_taps: u8,
+    action_index: u32,
     virtual_key: u32,
+    taps: u8,
+    has_deep_tier: bool,
 ) -> Result<(), WindowsError> {
     let mut state = GESTURE_HOOK
         .lock()
@@ -1151,41 +1164,35 @@ fn install_gesture_hook_slot(
         state.hook = hook.0 as isize;
         state.hwnd = hwnd.0 as isize;
     }
-    if let Some(existing) = state.slots.iter_mut().find(|s| s.action == action as u32) {
-        *existing = GestureSlot {
-            action: action as u32,
-            required_taps,
-            virtual_key,
-            taps: 0,
-            key_down: false,
-            last_tap_time: 0,
-            sequence: 0,
-        };
+    let slot = if let Some(index) = state
+        .slots
+        .iter()
+        .position(|slot| slot.virtual_key == virtual_key)
+    {
+        &mut state.slots[index]
     } else {
         state.slots.push(GestureSlot {
-            action: action as u32,
-            required_taps,
             virtual_key,
-            taps: 0,
-            key_down: false,
-            last_tap_time: 0,
-            sequence: 0,
+            ..Default::default()
         });
+        state.slots.last_mut().expect("gesture slot was inserted")
+    };
+    if taps == 3 {
+        slot.triple_action_index = Some(action_index);
+    } else {
+        slot.double_action_index = Some(action_index);
+        slot.double_has_deep_tier = has_deep_tier;
     }
     Ok(())
 }
 
-fn uninstall_gesture_hook_slot(hwnd: HWND, action: TaskAction) {
+fn uninstall_all_gesture_hook_slots(hwnd: HWND) {
     let hook_to_unhook = if let Ok(mut state) = GESTURE_HOOK.lock() {
-        state.slots.retain(|s| s.action != action as u32);
-        if state.slots.is_empty() {
-            let hook = state.hook;
-            state.hook = 0;
-            state.hwnd = 0;
-            hook
-        } else {
-            0
-        }
+        state.slots.clear();
+        let hook = state.hook;
+        state.hook = 0;
+        state.hwnd = 0;
+        hook
     } else {
         0
     };
@@ -1213,7 +1220,8 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: 
     let ctrl_down = GetAsyncKeyState(VK_CONTROL.0 as i32) < 0;
     let mut replays = Vec::new();
     let mut trigger_hwnd = 0;
-    let mut trigger_action = 0;
+    let mut trigger_action_index = 0;
+    let mut trigger_tier = ActionTier::Standard;
     let mut suppress = false;
     let mut timer_should_stop = false;
 
@@ -1225,18 +1233,25 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: 
                 .iter()
                 .position(|slot| slot.virtual_key == event.vkCode);
             if let Some(slot_index) = slot_index {
-                let action = state.slots[slot_index].action;
+                let virtual_key = state.slots[slot_index].virtual_key;
                 if key_down && ctrl_down {
-                    replays.extend(take_pending_replays(&mut state.slots, Some(action)));
+                    let (prev_trigger, prev_replays) =
+                        process_pending_gestures(&mut state.slots, Some(virtual_key));
+                    if let Some((act_idx, tier)) = prev_trigger {
+                        trigger_hwnd = state_hwnd;
+                        trigger_action_index = act_idx;
+                        trigger_tier = tier;
+                    }
+                    replays.extend(prev_replays);
                     let next_sequence = state.next_sequence;
                     let mut consume_sequence = false;
                     let slot = &mut state.slots[slot_index];
                     if !slot.key_down {
-                        let (taps, expired_replay, triggered) = advance_gesture_tap(
+                        let (taps, expired_replay, triggered_tier) = advance_gesture_tap(
                             slot.taps,
                             slot.last_tap_time,
                             event.time,
-                            slot.required_taps,
+                            slot.has_triple_target(),
                         );
                         slot.taps = taps;
                         if expired_replay > 0 {
@@ -1251,12 +1266,25 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: 
                         slot.last_tap_time = event.time;
                         let hwnd = HWND(state_hwnd as *mut c_void);
                         let _ = KillTimer(Some(hwnd), GESTURE_TIMER_ID);
-                        SetTimer(Some(hwnd), GESTURE_TIMER_ID, GESTURE_INTERVAL_MS, None);
-                        if triggered {
-                            let _ = KillTimer(Some(hwnd), GESTURE_TIMER_ID);
-                            trigger_hwnd = state_hwnd;
-                            trigger_action = slot.action;
+
+                        if let Some(tier) = triggered_tier {
+                            if let Some((action_index, action_tier)) = slot.action_for_tier(tier) {
+                                trigger_hwnd = state_hwnd;
+                                trigger_action_index = action_index;
+                                trigger_tier = action_tier;
+                            } else {
+                                replays.push((
+                                    if tier == ActionTier::Deep { 3 } else { 2 },
+                                    slot.virtual_key,
+                                ));
+                            }
                             slot.sequence = 0;
+                            slot.taps = 0;
+                        } else if taps == 2 {
+                            // Waiting window for potential triple tap
+                            SetTimer(Some(hwnd), GESTURE_TIMER_ID, TIER_DISPATCH_WINDOW_MS, None);
+                        } else if taps == 1 {
+                            SetTimer(Some(hwnd), GESTURE_TIMER_ID, GESTURE_INTERVAL_MS, None);
                         }
                     }
                     if consume_sequence {
@@ -1268,8 +1296,15 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: 
                     suppress = true;
                 }
             } else if (is_ctrl && key_up) || key_down {
-                replays.extend(take_pending_replays(&mut state.slots, None));
-                timer_should_stop = !replays.is_empty();
+                let (pending_trigger, pending_replays) =
+                    process_pending_gestures(&mut state.slots, None);
+                if let Some((act_idx, tier)) = pending_trigger {
+                    trigger_hwnd = state_hwnd;
+                    trigger_action_index = act_idx;
+                    trigger_tier = tier;
+                }
+                replays.extend(pending_replays);
+                timer_should_stop = !replays.is_empty() || trigger_hwnd != 0;
             }
         }
     }
@@ -1288,8 +1323,12 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: 
         let _ = PostMessageW(
             Some(HWND(trigger_hwnd as *mut c_void)),
             WM_GESTURE_HOTKEY,
-            WPARAM(trigger_action as usize),
-            LPARAM(0),
+            WPARAM(trigger_action_index as usize),
+            LPARAM(if trigger_tier == ActionTier::Deep {
+                1
+            } else {
+                0
+            }),
         );
     }
     if suppress {
@@ -1299,15 +1338,27 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: 
     }
 }
 
-fn replay_pending_gesture(hwnd: HWND) {
+fn handle_gesture_timer(hwnd: HWND) {
     unsafe {
         let _ = KillTimer(Some(hwnd), GESTURE_TIMER_ID);
     }
-    let to_replay = if let Ok(mut state) = GESTURE_HOOK.lock() {
-        take_pending_replays(&mut state.slots, None)
+    let (triggered, to_replay) = if let Ok(mut state) = GESTURE_HOOK.lock() {
+        process_pending_gestures(&mut state.slots, None)
     } else {
-        Vec::new()
+        (None, Vec::new())
     };
+
+    if let Some((action_index, tier)) = triggered {
+        unsafe {
+            let _ = PostMessageW(
+                Some(hwnd),
+                WM_GESTURE_HOTKEY,
+                WPARAM(action_index as usize),
+                LPARAM(if tier == ActionTier::Deep { 1 } else { 0 }),
+            );
+        }
+    }
+
     for (replay, virtual_key) in to_replay {
         let _ = clipboard::replay_ctrl_key(virtual_key, replay);
     }
@@ -1317,10 +1368,7 @@ fn add_tray_icon(hwnd: HWND, state: &AppState) -> Result<(), AppError> {
     let mut data = tray_data(hwnd, state.icon);
     data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     data.uCallbackMessage = WM_TRAY;
-    copy_wide(
-        &mut data.szTip,
-        &idle_tooltip_text(&state.hotkey, &state.translate_hotkey),
-    );
+    copy_wide(&mut data.szTip, &idle_tooltip_text(&state.config));
     if !unsafe { Shell_NotifyIconW(NIM_ADD, &data) }.as_bool() {
         return Err(AppError(WindowsError::from_thread().to_string()));
     }
@@ -1762,16 +1810,28 @@ mod status_popup_tests {
 
     #[test]
     fn triple_tap_triggers_only_on_the_third_quick_press() {
-        assert_eq!(advance_gesture_tap(0, 0, 100, 3), (1, 0, false));
-        assert_eq!(advance_gesture_tap(1, 100, 250, 3), (2, 0, false));
-        assert_eq!(advance_gesture_tap(2, 250, 400, 3), (0, 0, true));
+        assert_eq!(advance_gesture_tap(0, 0, 100, true), (1, 0, None));
+        assert_eq!(advance_gesture_tap(1, 100, 250, true), (2, 0, None));
+        assert_eq!(
+            advance_gesture_tap(2, 250, 400, true),
+            (0, 0, Some(ActionTier::Deep))
+        );
+    }
+
+    #[test]
+    fn double_tap_without_triple_tier_triggers_immediately_on_second_press() {
+        assert_eq!(advance_gesture_tap(0, 0, 100, false), (1, 0, None));
+        assert_eq!(
+            advance_gesture_tap(1, 100, 250, false),
+            (0, 0, Some(ActionTier::Standard))
+        );
     }
 
     #[test]
     fn expired_taps_are_replayed_before_starting_a_new_sequence() {
         assert_eq!(
-            advance_gesture_tap(2, 100, 100 + GESTURE_INTERVAL_MS + 1, 3),
-            (1, 2, false)
+            advance_gesture_tap(2, 100, 100 + GESTURE_INTERVAL_MS + 1, true),
+            (1, 2, None)
         );
     }
 
@@ -1779,29 +1839,30 @@ mod status_popup_tests {
     fn pending_gestures_replay_in_the_order_they_started() {
         let mut slots = vec![
             GestureSlot {
-                action: TaskAction::Optimize as u32,
-                required_taps: 2,
+                double_action_index: Some(0),
                 virtual_key: 0x77,
+                double_has_deep_tier: true,
                 taps: 1,
                 key_down: false,
                 last_tap_time: 200,
                 sequence: 2,
+                ..Default::default()
             },
             GestureSlot {
-                action: TaskAction::Translate as u32,
-                required_taps: 2,
+                double_action_index: Some(1),
                 virtual_key: 0x78,
+                double_has_deep_tier: true,
                 taps: 1,
                 key_down: false,
                 last_tap_time: 100,
                 sequence: 1,
+                ..Default::default()
             },
         ];
 
-        assert_eq!(
-            take_pending_replays(&mut slots, None),
-            vec![(1, 0x78), (1, 0x77)]
-        );
+        let (triggered, replays) = process_pending_gestures(&mut slots, None);
+        assert_eq!(triggered, None);
+        assert_eq!(replays, vec![(1, 0x78), (1, 0x77)]);
         assert!(slots
             .iter()
             .all(|slot| slot.taps == 0 && slot.sequence == 0));
@@ -1811,31 +1872,101 @@ mod status_popup_tests {
     fn switching_gesture_keys_drains_only_the_previous_sequence() {
         let mut slots = vec![
             GestureSlot {
-                action: TaskAction::Optimize as u32,
-                required_taps: 2,
+                double_action_index: Some(0),
                 virtual_key: 0x77,
+                double_has_deep_tier: true,
                 taps: 1,
                 key_down: false,
                 last_tap_time: 100,
                 sequence: 1,
+                ..Default::default()
             },
             GestureSlot {
-                action: TaskAction::Translate as u32,
-                required_taps: 2,
+                double_action_index: Some(1),
                 virtual_key: 0x78,
+                double_has_deep_tier: true,
                 taps: 1,
                 key_down: false,
                 last_tap_time: 200,
                 sequence: 2,
+                ..Default::default()
             },
         ];
 
-        assert_eq!(
-            take_pending_replays(&mut slots, Some(TaskAction::Translate as u32)),
-            vec![(1, 0x77)]
-        );
+        let (triggered, replays) = process_pending_gestures(&mut slots, Some(0x78));
+        assert_eq!(triggered, None);
+        assert_eq!(replays, vec![(1, 0x77)]);
         assert_eq!(slots[0].taps, 0);
         assert_eq!(slots[1].taps, 1);
+    }
+
+    #[test]
+    fn completed_double_tap_triggers_standard_tier_on_external_key_or_ctrl_release() {
+        let mut slots = vec![GestureSlot {
+            double_action_index: Some(0),
+            virtual_key: 0x77,
+            double_has_deep_tier: true,
+            taps: 2,
+            key_down: false,
+            last_tap_time: 100,
+            sequence: 1,
+            ..Default::default()
+        }];
+
+        let (triggered, replays) = process_pending_gestures(&mut slots, None);
+        assert_eq!(triggered, Some((0, ActionTier::Standard)));
+        assert_eq!(replays, vec![]);
+        assert_eq!(slots[0].taps, 0);
+    }
+
+    #[test]
+    fn explicit_double_and_triple_actions_route_to_separate_targets() {
+        let slot = GestureSlot {
+            double_action_index: Some(3),
+            triple_action_index: Some(7),
+            virtual_key: 0x75,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            slot.action_for_tier(ActionTier::Standard),
+            Some((3, ActionTier::Standard))
+        );
+        assert_eq!(
+            slot.action_for_tier(ActionTier::Deep),
+            Some((7, ActionTier::Deep))
+        );
+        assert!(slot.has_triple_target());
+    }
+
+    #[test]
+    fn double_action_deep_prompt_is_the_fallback_triple_target() {
+        let slot = GestureSlot {
+            double_action_index: Some(3),
+            virtual_key: 0x75,
+            double_has_deep_tier: true,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            slot.action_for_tier(ActionTier::Deep),
+            Some((3, ActionTier::Deep))
+        );
+    }
+
+    #[test]
+    fn triple_only_slot_does_not_dispatch_on_two_taps() {
+        let mut slots = vec![GestureSlot {
+            triple_action_index: Some(7),
+            virtual_key: 0x75,
+            taps: 2,
+            sequence: 1,
+            ..Default::default()
+        }];
+
+        let (triggered, replays) = process_pending_gestures(&mut slots, None);
+        assert_eq!(triggered, None);
+        assert_eq!(replays, vec![(2, 0x75)]);
     }
 
     #[test]

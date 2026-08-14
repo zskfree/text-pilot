@@ -71,6 +71,12 @@ struct ResponseMessage {
     content: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ActionTier {
+    Standard,
+    Deep,
+}
+
 impl ApiClient {
     pub fn new() -> Self {
         Self::with_timeouts(GLOBAL_TIMEOUT, CONNECT_TIMEOUT)
@@ -92,6 +98,32 @@ impl ApiClient {
         Self { agent }
     }
 
+    pub fn execute_action(
+        &self,
+        config: &Config,
+        action: &crate::config::CustomAction,
+        tier: ActionTier,
+        text: &str,
+    ) -> Result<String, ApiError> {
+        self.execute_action_request(config, action, tier, text, 0)
+    }
+
+    pub fn execute_action_request(
+        &self,
+        config: &Config,
+        action: &crate::config::CustomAction,
+        tier: ActionTier,
+        text: &str,
+        request_id: u64,
+    ) -> Result<String, ApiError> {
+        let api = config
+            .active_api()
+            .ok_or_else(|| ApiError::InvalidConfig("当前配置不存在".into()))?;
+        let model = action_model(api, action);
+        let request = build_action_request(config, api, action, tier, text, model);
+        self.send_chat_request(api, &request, request_id)
+    }
+
     pub fn optimize(&self, config: &Config, text: &str) -> Result<String, ApiError> {
         self.optimize_request(config, text, 0)
     }
@@ -108,13 +140,30 @@ impl ApiClient {
         self.translate_request(config, "请回复 OK", 0).map(|_| ())
     }
 
+    pub fn test_action_connection(
+        &self,
+        config: &Config,
+        action: &crate::config::CustomAction,
+    ) -> Result<(), ApiError> {
+        self.execute_action_request(config, action, ActionTier::Standard, "请回复 OK", 0)
+            .map(|_| ())
+    }
+
     pub fn optimize_request(
         &self,
         config: &Config,
         text: &str,
         request_id: u64,
     ) -> Result<String, ApiError> {
-        self.execute_chat_request(config, request_id, |cfg, api| build_request(cfg, api, text))
+        if let Some(action) = config.find_action(crate::config::DEFAULT_OPTIMIZE_ACTION_ID) {
+            self.execute_action_request(config, action, ActionTier::Standard, text, request_id)
+        } else {
+            let api = config
+                .active_api()
+                .ok_or_else(|| ApiError::InvalidConfig("当前配置不存在".into()))?;
+            let request = build_request(config, api, text);
+            self.send_chat_request(api, &request, request_id)
+        }
     }
 
     pub fn translate_request(
@@ -123,22 +172,15 @@ impl ApiClient {
         text: &str,
         request_id: u64,
     ) -> Result<String, ApiError> {
-        self.execute_chat_request(config, request_id, |cfg, api| {
-            build_translate_request(cfg, api, text)
-        })
-    }
-
-    fn execute_chat_request(
-        &self,
-        config: &Config,
-        request_id: u64,
-        build_fn: impl for<'a> FnOnce(&'a Config, &'a ApiProfile) -> ChatRequest<'a>,
-    ) -> Result<String, ApiError> {
-        let api = config
-            .active_api()
-            .ok_or_else(|| ApiError::InvalidConfig("当前配置不存在".into()))?;
-        let request = build_fn(config, api);
-        self.send_chat_request(api, &request, request_id)
+        if let Some(action) = config.find_action(crate::config::DEFAULT_TRANSLATE_ACTION_ID) {
+            self.execute_action_request(config, action, ActionTier::Standard, text, request_id)
+        } else {
+            let api = config
+                .active_api()
+                .ok_or_else(|| ApiError::InvalidConfig("当前配置不存在".into()))?;
+            let request = build_translate_request(config, api, text);
+            self.send_chat_request(api, &request, request_id)
+        }
     }
 
     fn send_chat_request(
@@ -189,6 +231,24 @@ impl ApiClient {
     }
 }
 
+fn action_model<'a>(api: &'a ApiProfile, action: &crate::config::CustomAction) -> &'a str {
+    if let Some(model) = api
+        .models
+        .iter()
+        .find(|model| model.trim().eq_ignore_ascii_case(action.model.trim()))
+    {
+        return model.trim();
+    }
+    if action
+        .id
+        .eq_ignore_ascii_case(crate::config::DEFAULT_TRANSLATE_ACTION_ID)
+    {
+        api.translation_model.trim()
+    } else {
+        api.model.trim()
+    }
+}
+
 fn build_chat_request<'a>(
     model: &'a str,
     system_content: String,
@@ -211,6 +271,79 @@ fn build_chat_request<'a>(
         temperature,
         max_tokens,
         stream: false,
+    }
+}
+
+fn build_action_request<'a>(
+    config: &'a Config,
+    api: &'a ApiProfile,
+    action: &'a crate::config::CustomAction,
+    tier: ActionTier,
+    text: &str,
+    model: &'a str,
+) -> ChatRequest<'a> {
+    let native = config.native_language.trim();
+    let target = config.target_language.trim();
+
+    let raw_prompt = match tier {
+        ActionTier::Deep if !action.triple_prompt.trim().is_empty() => action.triple_prompt.trim(),
+        _ => action.system_prompt.trim(),
+    };
+
+    let processed_prompt = raw_prompt
+        .replace("{native}", native)
+        .replace("{target}", target)
+        .replace("<native_language>", native)
+        .replace("<target_language>", target);
+
+    if action
+        .id
+        .eq_ignore_ascii_case(crate::config::DEFAULT_OPTIMIZE_ACTION_ID)
+    {
+        let user_content = format!(
+            "<optimization_rules>\n{}\n</optimization_rules>\n<original_prompt>\n{}\n</original_prompt>",
+            processed_prompt, text
+        );
+        build_chat_request(
+            model,
+            STATELESS_GUARD.into(),
+            user_content,
+            api.temperature,
+            api.max_tokens,
+        )
+    } else if action
+        .id
+        .eq_ignore_ascii_case(crate::config::DEFAULT_TRANSLATE_ACTION_ID)
+    {
+        let user_content = format!(
+            "双向翻译执行令（最高优先级）：\n- 如果待处理文段是{native}，请准确翻译为{target}。\n- 如果待处理文段是除{native}以外的任何外语，必须准确翻译回{native}，严禁翻译为{target}。\n\n<original_text>\n{text}\n</original_text>",
+            native = native,
+            target = target,
+            text = text
+        );
+        build_chat_request(
+            model,
+            processed_prompt,
+            user_content,
+            api.temperature,
+            api.max_tokens,
+        )
+    } else {
+        let user_content = format!(
+            "<rules>\n{}\n</rules>\n<input_data>\n{}\n</input_data>",
+            processed_prompt, text
+        );
+        let system_guard = format!(
+            "你正在执行动作「{}」。请严格遵守 <rules> 标签内的规则处理 <input_data> 中的文本数据。仅输出处理结果，不要输出多余解释或前后缀。",
+            action.name
+        );
+        build_chat_request(
+            model,
+            system_guard,
+            user_content,
+            api.temperature,
+            api.max_tokens,
+        )
     }
 }
 
@@ -622,6 +755,35 @@ mod tests {
     }
 
     #[test]
+    fn action_models_use_valid_override_or_action_specific_fallback() {
+        let mut config = Config::default();
+        let api = config.active_api_mut().unwrap();
+        api.models = vec!["model-a".into(), "model-b".into()];
+        api.model = "model-a".into();
+        api.translation_model = "model-b".into();
+
+        let optimize = config
+            .find_action(crate::config::DEFAULT_OPTIMIZE_ACTION_ID)
+            .unwrap()
+            .clone();
+        let translate = config
+            .find_action(crate::config::DEFAULT_TRANSLATE_ACTION_ID)
+            .unwrap()
+            .clone();
+        let mut valid_override = optimize.clone();
+        valid_override.model = "MODEL-B".into();
+        let mut invalid_override = optimize;
+        invalid_override.model = "missing-model".into();
+        let mut invalid_translation_override = translate;
+        invalid_translation_override.model = "missing-model".into();
+        let api = config.active_api().unwrap();
+
+        assert_eq!(action_model(api, &valid_override), "model-b");
+        assert_eq!(action_model(api, &invalid_override), "model-a");
+        assert_eq!(action_model(api, &invalid_translation_override), "model-b");
+    }
+
+    #[test]
     #[ignore = "requires an explicitly configured live API"]
     fn live_provider_keeps_consecutive_requests_isolated() {
         let config_path = std::env::var_os("PROMPT_OPTIMIZER_LIVE_CONFIG")
@@ -655,5 +817,43 @@ mod tests {
             !second.contains("ALPHA-731"),
             "second response leaked the first request"
         );
+    }
+
+    #[test]
+    fn custom_action_and_triple_tier_switch_prompts() {
+        let config = Config::default();
+        let api = config.active_api().unwrap();
+        let action = config
+            .find_action(crate::config::DEFAULT_OPTIMIZE_ACTION_ID)
+            .unwrap();
+
+        let standard_req = serde_json::to_value(build_action_request(
+            &config,
+            api,
+            action,
+            ActionTier::Standard,
+            "测试输入",
+            &api.model,
+        ))
+        .unwrap();
+
+        let deep_req = serde_json::to_value(build_action_request(
+            &config,
+            api,
+            action,
+            ActionTier::Deep,
+            "测试输入",
+            &api.model,
+        ))
+        .unwrap();
+
+        assert!(standard_req["messages"][1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("你是提示词优化助手"));
+        assert!(deep_req["messages"][1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("你是资深提示词架构师"));
     }
 }

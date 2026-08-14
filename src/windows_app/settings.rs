@@ -29,6 +29,7 @@ pub const WM_APPLY_CONFIG: u32 = WM_APP + 20;
 pub const WM_SETTINGS_CLOSED: u32 = WM_APP + 21;
 pub const WM_TEST_API: u32 = WM_APP + 22;
 pub const WM_TEST_TRANSLATION_API: u32 = WM_APP + 23;
+pub const WM_TEST_ACTION_API: u32 = WM_APP + 24;
 
 const CLASS_NAME: PCWSTR = w!("PromptOptimizer.SettingsWindow");
 const TITLE: PCWSTR = w!("PromptOptimizer 设置");
@@ -41,6 +42,12 @@ pub struct ApplyRequest {
 
 pub struct ApiTestRequest {
     pub config: Config,
+    pub error: Option<String>,
+}
+
+pub struct ActionApiTestRequest {
+    pub config: Config,
+    pub action: prompt_optimizer::config::CustomAction,
     pub error: Option<String>,
 }
 
@@ -76,6 +83,8 @@ struct WebFormData {
     translation_hotkey: String,
     native_language: String,
     target_language: String,
+    #[serde(default)]
+    actions: Vec<prompt_optimizer::config::CustomAction>,
     play_sound: bool,
     auto_start: bool,
 }
@@ -181,6 +190,23 @@ fn config_from_form(
     } else {
         target_lang.to_string()
     };
+
+    if !form.actions.is_empty() {
+        config.actions = form.actions.clone();
+        if let Some(opt) = config.actions.iter().find(|a| {
+            a.id.eq_ignore_ascii_case(prompt_optimizer::config::DEFAULT_OPTIMIZE_ACTION_ID)
+        }) {
+            config.hotkey = opt.hotkey.clone();
+            config.system_prompt = opt.system_prompt.clone();
+        }
+        if let Some(trans) = config.actions.iter().find(|a| {
+            a.id.eq_ignore_ascii_case(prompt_optimizer::config::DEFAULT_TRANSLATE_ACTION_ID)
+        }) {
+            config.translation_hotkey = trans.hotkey.clone();
+            config.translation_prompt = trans.system_prompt.clone();
+        }
+    }
+
     config.play_sound = form.play_sound;
     config.auto_start = form.auto_start;
     config.validate().map_err(|error| error.to_string())?;
@@ -324,6 +350,24 @@ pub unsafe fn complete_translation_api_test(hwnd: HWND, result: Result<(), Strin
     match result {
         Ok(()) => send_status_to_web(state, "翻译 API 连接正常", false, true, false),
         Err(error) => send_status_to_web(state, &error, true, false, false),
+    }
+}
+
+pub unsafe fn complete_action_api_test(hwnd: HWND, action_name: &str, result: Result<(), String>) {
+    let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut SettingsState;
+    if pointer.is_null() {
+        return;
+    }
+    let state = &mut *pointer;
+    match result {
+        Ok(()) => {
+            let msg = format!("「{}」API 连接正常（HTTP 200）", action_name);
+            send_status_to_web(state, &msg, false, true, false);
+        }
+        Err(error) => {
+            let msg = format!("「{}」API 测试失败：{}", action_name, error);
+            send_status_to_web(state, &msg, true, false, false);
+        }
     }
 }
 
@@ -659,7 +703,67 @@ fn handle_web_message(hwnd: HWND, json_str: &str) {
         "test_translation_api" => {
             test_translation_api_from_web(hwnd, state, &val["data"]);
         }
+        "test_action_api" => {
+            let action_id = val["action_id"].as_str().unwrap_or("optimize");
+            test_action_api_from_web(hwnd, state, &val["data"], action_id);
+        }
         _ => {}
+    }
+}
+
+fn test_action_api_from_web(
+    hwnd: HWND,
+    state: &mut SettingsState,
+    data: &serde_json::Value,
+    action_id: &str,
+) {
+    let form = match parse_form_data(data) {
+        Ok(form) => form,
+        Err(error) => {
+            send_status_to_web(state, &error, true, false, false);
+            return;
+        }
+    };
+    let config = match config_from_form(
+        &state.current,
+        &state.draft_profiles,
+        &state.draft_active_profile,
+        &form,
+    ) {
+        Ok(config) => config,
+        Err(error) => {
+            send_status_to_web(state, &error, true, false, false);
+            return;
+        }
+    };
+    let action = config
+        .find_action(action_id)
+        .cloned()
+        .unwrap_or_else(|| config.actions.first().cloned().unwrap_or_default());
+
+    send_status_to_web(
+        state,
+        &format!("正在测试「{}」API 连接...", action.name),
+        false,
+        false,
+        true,
+    );
+    let mut request = ActionApiTestRequest {
+        config,
+        action,
+        error: None,
+    };
+    let result = unsafe {
+        SendMessageW(
+            state.owner,
+            WM_TEST_ACTION_API,
+            Some(WPARAM(hwnd.0 as usize)),
+            Some(LPARAM((&mut request as *mut ActionApiTestRequest) as isize)),
+        )
+    };
+    if result.0 != 1 {
+        let message = request.error.as_deref().unwrap_or("API 测试未能启动");
+        send_status_to_web(state, message, true, false, false);
     }
 }
 
@@ -816,6 +920,7 @@ fn send_state_to_web(
         "translation_hotkey": state.current.translation_hotkey,
         "native_language": state.current.native_language,
         "target_language": state.current.target_language,
+        "actions": state.current.actions,
         "play_sound": state.current.play_sound,
         "auto_start": state.current.auto_start,
         "status": status.unwrap_or("所有修改统一点击“保存并应用”"),
@@ -987,6 +1092,53 @@ mod tests {
         ];
 
         assert_eq!(next_profile_name(&profiles), "新配置 2");
+    }
+
+    #[test]
+    fn form_round_trip_preserves_translation_model_and_other_profiles() {
+        let mut current = Config::default();
+        let secondary = ApiProfile {
+            name: "备用配置".into(),
+            models: vec!["backup-model".into(), "backup-translation".into()],
+            model: "backup-model".into(),
+            translation_model: "backup-translation".into(),
+            ..ApiProfile::default()
+        };
+        current.api_profiles.push(secondary.clone());
+        let form = WebFormData {
+            profile_name: current.active_profile.clone(),
+            api_key: current.api_profiles[0].api_key.clone(),
+            base_url: current.api_profiles[0].base_url.clone(),
+            models: vec!["main-model".into(), "main-translation".into()],
+            model: "main-model".into(),
+            translation_model: "main-translation".into(),
+            temperature: "0.3".into(),
+            max_tokens: "512".into(),
+            system_prompt: current.system_prompt.clone(),
+            translation_prompt: current.translation_prompt.clone(),
+            hotkey: current.hotkey.clone(),
+            translation_hotkey: current.translation_hotkey.clone(),
+            native_language: current.native_language.clone(),
+            target_language: current.target_language.clone(),
+            play_sound: current.play_sound,
+            auto_start: current.auto_start,
+            ..WebFormData::default()
+        };
+
+        let saved = config_from_form(
+            &current,
+            &current.api_profiles,
+            &current.active_profile,
+            &form,
+        )
+        .unwrap();
+
+        assert_eq!(saved.active_api().unwrap().model, "main-model");
+        assert_eq!(
+            saved.active_api().unwrap().translation_model,
+            "main-translation"
+        );
+        assert_eq!(saved.api_profiles[1], secondary);
     }
 
     #[test]

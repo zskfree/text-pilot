@@ -127,7 +127,7 @@ fn parse_main_key(token: &str) -> Result<(u32, String), HotkeyError> {
 
 pub fn check_hotkey_conflict(a: &HotkeySpec, b: &HotkeySpec) -> Result<(), HotkeyError> {
     if a == b {
-        return Err(HotkeyError("优化与翻译快捷键不能相同".into()));
+        return Err(HotkeyError("快捷键不能相同".into()));
     }
     let vk_a = match a.kind {
         HotkeyKind::Chord { virtual_key, .. } | HotkeyKind::CtrlMultiTap { virtual_key, .. } => {
@@ -143,7 +143,17 @@ pub fn check_hotkey_conflict(a: &HotkeySpec, b: &HotkeySpec) -> Result<(), Hotke
         let is_multi_a = matches!(a.kind, HotkeyKind::CtrlMultiTap { .. });
         let is_multi_b = matches!(b.kind, HotkeyKind::CtrlMultiTap { .. });
         if is_multi_a && is_multi_b {
-            return Err(HotkeyError("同一按键不能重复设置多击手势".into()));
+            if let (
+                HotkeyKind::CtrlMultiTap { taps: taps_a, .. },
+                HotkeyKind::CtrlMultiTap { taps: taps_b, .. },
+            ) = (&a.kind, &b.kind)
+            {
+                if taps_a == taps_b {
+                    return Err(HotkeyError("同一按键不能重复设置相同次数的多击手势".into()));
+                }
+                // Different taps (e.g. 2 vs 3) on the same key are allowed for tier dispatch!
+                return Ok(());
+            }
         }
         if is_multi_a || is_multi_b {
             let chord = if is_multi_a { &b.kind } else { &a.kind };
@@ -153,6 +163,22 @@ pub fn check_hotkey_conflict(a: &HotkeySpec, b: &HotkeySpec) -> Result<(), Hotke
                         "Ctrl 组合键与 Ctrl 多击手势不能使用相同的按键".into(),
                     ));
                 }
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn check_actions_hotkeys_conflict(actions: &[(&str, &HotkeySpec)]) -> Result<(), HotkeyError> {
+    for i in 0..actions.len() {
+        for j in (i + 1)..actions.len() {
+            let (name_a, spec_a) = actions[i];
+            let (name_b, spec_b) = actions[j];
+            if let Err(e) = check_hotkey_conflict(spec_a, spec_b) {
+                return Err(HotkeyError(format!(
+                    "动作「{}」与「{}」的快捷键冲突：{}",
+                    name_a, name_b, e.0
+                )));
             }
         }
     }
@@ -253,9 +279,20 @@ mod tests {
         let alt_f8 = parse_hotkey("Alt+F8").unwrap();
 
         assert!(check_hotkey_conflict(&double_f8, &double_f8).is_err());
-        assert!(check_hotkey_conflict(&double_f8, &triple_f8).is_err());
+        // Double and triple taps on the same key are allowed for tiered gestures!
+        assert!(check_hotkey_conflict(&double_f8, &triple_f8).is_ok());
         assert!(check_hotkey_conflict(&double_f8, &ctrl_f8).is_err());
         assert!(check_hotkey_conflict(&double_f8, &double_f9).is_ok());
         assert!(check_hotkey_conflict(&double_f8, &alt_f8).is_ok());
+
+        let actions = vec![
+            ("提示词优化", &double_f8),
+            ("智能翻译", &double_f9),
+            ("代码重构", &triple_f8),
+        ];
+        assert!(check_actions_hotkeys_conflict(&actions).is_ok());
+
+        let conflicting_actions = vec![("提示词优化", &double_f8), ("智能翻译", &ctrl_f8)];
+        assert!(check_actions_hotkeys_conflict(&conflicting_actions).is_err());
     }
 }

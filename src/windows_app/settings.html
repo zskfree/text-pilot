@@ -27,27 +27,6 @@
       --radius-sm: 6px;
     }
 
-    .info-banner {
-      background: var(--accent-soft);
-      border: 1px solid rgba(37, 99, 235, 0.2);
-      border-radius: var(--radius-md);
-      padding: 14px 16px;
-      color: var(--text-main);
-      font-size: 13px;
-      line-height: 1.6;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .info-banner-title {
-      font-weight: 600;
-      color: var(--accent);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
     * {
       box-sizing: border-box;
       margin: 0;
@@ -191,13 +170,16 @@
       text-transform: uppercase;
       letter-spacing: 0.5px;
       margin-bottom: 2px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
 
-    /* 表单与布局 Grid */
+    /* 表单与布局 Grid（严格顶部对齐） */
     .form-row {
       display: flex;
       gap: 16px;
-      align-items: flex-end;
+      align-items: flex-start;
     }
 
     .form-col {
@@ -205,17 +187,23 @@
       display: flex;
       flex-direction: column;
       gap: 6px;
+      min-width: 0;
     }
 
     .form-label {
       font-size: 12.5px;
       font-weight: 600;
       color: var(--text-main);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-height: 18px;
     }
 
     .form-sublabel {
       font-size: 11.5px;
       color: var(--text-muted);
+      line-height: 1.4;
     }
 
     input[type="text"],
@@ -233,6 +221,7 @@
       transition: all 0.15s ease;
       font-family: inherit;
       user-select: text;
+      height: 38px;
     }
 
     input[type="text"]:focus,
@@ -245,17 +234,18 @@
     }
 
     textarea {
+      height: auto;
       resize: vertical;
-      min-height: 140px;
+      min-height: 110px;
       line-height: 1.5;
     }
 
     .model-list-editor {
-      min-height: 82px;
+      min-height: 80px;
       resize: vertical;
     }
 
-    /* 自定义优雅下拉选择组件 (Custom Select Dropdown) */
+    /* 自定义下拉选择组件 */
     .custom-select-container {
       position: relative;
       width: 100%;
@@ -275,6 +265,7 @@
       cursor: pointer;
       transition: all 0.15s ease;
       width: 100%;
+      height: 38px;
       font-family: inherit;
     }
 
@@ -341,11 +332,23 @@
       padding: 4px 0;
     }
 
+    .switch-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background-color: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 6px 12px;
+      height: 38px;
+    }
+
     .switch {
       position: relative;
       display: inline-block;
       width: 44px;
       height: 24px;
+      flex-shrink: 0;
     }
 
     .switch input {
@@ -395,12 +398,100 @@
       outline-offset: 2px;
     }
 
+    /* 动作列表卡片选择栏 */
+    .action-chips-container {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      align-items: center;
+    }
+
+    .action-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      background-color: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-size: 13px;
+      font-family: inherit;
+      font-weight: 500;
+      color: var(--text-main);
+      white-space: nowrap;
+    }
+
+    .action-chip:hover {
+      background-color: #FFFFFF;
+      border-color: var(--border-hover);
+    }
+
+    .action-chip.active {
+      background-color: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .action-chip.disabled {
+      opacity: 0.55;
+    }
+
+    .action-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--success);
+      flex-shrink: 0;
+    }
+
+    .action-chip.disabled .action-dot {
+      background-color: var(--text-subtle);
+    }
+
+    .action-badge {
+      font-size: 11px;
+      padding: 2px 6px;
+      background-color: rgba(0, 0, 0, 0.05);
+      border-radius: 4px;
+      color: var(--text-muted);
+    }
+
+    .action-chip.active .action-badge {
+      background-color: rgba(37, 99, 235, 0.12);
+      color: var(--accent);
+    }
+
+    .info-banner {
+      background: var(--accent-soft);
+      border: 1px solid rgba(37, 99, 235, 0.2);
+      border-radius: var(--radius-md);
+      padding: 12px 16px;
+      color: var(--text-main);
+      font-size: 12.5px;
+      line-height: 1.6;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .info-banner-title {
+      font-weight: 600;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
     /* 按钮样式 */
     .btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: 9px 16px;
+      padding: 8px 16px;
       font-size: 13px;
       font-weight: 600;
       border-radius: var(--radius-md);
@@ -409,6 +500,7 @@
       transition: all 0.15s ease;
       outline: none;
       gap: 6px;
+      height: 38px;
     }
 
     .btn-primary {
@@ -440,6 +532,16 @@
       transform: translateY(1px);
     }
 
+    .btn-danger {
+      background-color: #FEE2E2;
+      color: var(--error);
+      border-color: rgba(239, 68, 68, 0.2);
+    }
+
+    .btn-danger:hover {
+      background-color: #FECACA;
+    }
+
     .btn:disabled {
       cursor: wait;
       opacity: 0.58;
@@ -458,8 +560,9 @@
     }
 
     .btn-sm {
-      padding: 6px 12px;
+      padding: 5px 12px;
       font-size: 12px;
+      height: 30px;
     }
 
     /* 底部固定操作栏 */
@@ -516,13 +619,6 @@
       }
     }
 
-    @media (prefers-contrast: more) {
-      :root {
-        --border-color: #94A3B8;
-        --text-muted: #334155;
-      }
-    }
-
     @media (prefers-color-scheme: dark) {
       :root {
         --bg-main: #111827;
@@ -543,6 +639,15 @@
         --shadow-popover: 0 12px 28px rgba(0, 0, 0, 0.35);
       }
 
+      input[type="text"],
+      input[type="password"],
+      select,
+      textarea,
+      .action-chip,
+      .switch-card {
+        background-color: #0F172A;
+      }
+
       input[type="text"]:focus,
       input[type="password"]:focus,
       textarea:focus,
@@ -551,6 +656,10 @@
       .btn-secondary,
       .footer-bar {
         background-color: var(--bg-card);
+      }
+
+      .action-badge {
+        background-color: rgba(255, 255, 255, 0.08);
       }
 
       .nav-item:hover,
@@ -573,8 +682,8 @@
       <button type="button" class="nav-item active" data-target="page-service" onclick="switchPage('page-service')">
         模型与服务
       </button>
-      <button type="button" class="nav-item" data-target="page-prompt" onclick="switchPage('page-prompt')">
-        优化规则
+      <button type="button" class="nav-item" data-target="page-actions" onclick="switchPage('page-actions')">
+        动作与规则
       </button>
       <button type="button" class="nav-item" data-target="page-behavior" onclick="switchPage('page-behavior')">
         应用行为
@@ -593,14 +702,46 @@
     </div>
 
     <div class="content-scroll">
-      
-      <!-- 页面 1：模型与服务 -->
+
+      <!-- 页面 1：模型与服务 (动作在前，随动作联动模型配置) -->
       <div class="page-section active" id="page-service">
+        <!-- 1. 顶部动作插槽选择栏 -->
+        <div class="card" style="padding: 14px 20px;">
+          <div class="card-title" style="margin-bottom: 8px;">
+            <span>选择动作以配置专属模型 (Action Slots)</span>
+          </div>
+          <div class="action-chips-container" id="service-action-chips-list"></div>
+        </div>
+
+        <!-- 2. 当前选中动作的模型分配与测试卡片 -->
+        <div class="card" id="service-action-config-card">
+          <div class="card-title">
+            <span>动作模型设定 - <span id="svc-current-action-name-title" style="color: var(--accent);">提示词优化</span></span>
+            <span id="svc-current-action-hotkey-badge" style="font-size: 11.5px; color: var(--text-muted); font-weight: normal;"></span>
+          </div>
+
+          <div class="form-row">
+            <div class="form-col" style="flex: 2;">
+              <label class="form-label" for="svc_action_model">该动作调用模型</label>
+              <select id="svc_action_model" onchange="onServiceActionModelChange()"></select>
+              <div class="form-sublabel" id="svc_action_model_tip">当前实际生效：继承全局主模型</div>
+            </div>
+            <div class="form-col" style="flex: 1;">
+              <label class="form-label">连通性测试</label>
+              <button type="button" class="btn btn-outline-accent" id="btn-test-action-api" style="width: 100%;" onclick="testCurrentActionApi()">
+                🚀 测试此动作连接
+              </button>
+              <div class="form-sublabel">实时测试该动作实际调用的模型</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. API 基础服务与模型列表 -->
         <div class="card">
-          <div class="card-title">当前配置与服务</div>
+          <div class="card-title">API 基础服务与模型列表</div>
           <div class="form-row">
             <div class="form-col">
-              <label class="form-label">当前配置</label>
+              <label class="form-label">当前服务配置</label>
               <div class="custom-select-container">
                 <button type="button" class="select-trigger" id="select-profile-trigger" aria-haspopup="listbox" aria-expanded="false" onclick="toggleSelectOptions()">选择配置</button>
                 <div class="select-options" id="select-profile-options" role="listbox"></div>
@@ -614,16 +755,12 @@
 
           <div class="form-row">
             <div class="form-col">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <label class="form-label" style="margin-bottom: 0;" for="api_key">API Key</label>
-                <div class="switch-row" style="gap: 6px;">
-                  <label class="form-sublabel" style="margin: 0; cursor: pointer;" for="show_key">显示 Key</label>
-                  <label class="switch" style="transform: scale(0.85); transform-origin: right center;">
-                    <input type="checkbox" id="show_key" aria-label="显示 API Key" onchange="toggleKeyVisibility()">
-                    <span class="slider"></span>
-                  </label>
-                </div>
-              </div>
+              <label class="form-label" for="api_key">
+                <span>API Key</span>
+                <span style="display: inline-flex; align-items: center; gap: 4px; font-weight: normal; font-size: 11.5px; color: var(--text-muted); cursor: pointer;" onclick="toggleKeyVisibilityManual()">
+                  <input type="checkbox" id="show_key" style="cursor: pointer;" onchange="toggleKeyVisibility()"> 显示 Key
+                </span>
+              </label>
               <input type="password" id="api_key" placeholder="sk-..." oninput="markDirty()">
             </div>
             <div class="form-col">
@@ -632,27 +769,23 @@
             </div>
           </div>
 
-          <div class="form-row">
-            <div class="form-col">
-              <label class="form-label" for="model">优化模型</label>
-              <div style="display: flex; gap: 8px;">
-                <select id="model" style="flex: 1;" onchange="markDirty()" aria-describedby="model-help"></select>
-                <button class="btn btn-outline-accent" id="test-api" onclick="sendAction('test_api')">测试优化</button>
-              </div>
-            </div>
-            <div class="form-col">
-              <label class="form-label" for="translation_model">翻译模型</label>
-              <div style="display: flex; gap: 8px;">
-                <select id="translation_model" style="flex: 1;" onchange="markDirty()" aria-describedby="model-help"></select>
-                <button class="btn btn-outline-accent" id="test-translation-api" onclick="sendAction('test_translation_api')">测试翻译</button>
-              </div>
-            </div>
+          <div class="form-col">
+            <label class="form-label" for="models">可用模型列表 (每行一个)</label>
+            <textarea class="model-list-editor" id="models" placeholder="gpt-4o-mini&#10;gpt-4o&#10;claude-3-5-sonnet" oninput="syncModelOptionsFromEditor(); markDirty()"></textarea>
+            <div class="form-sublabel">每行填写一个模型名称。上方动作模型下拉框将自动使用此处维护的模型列表。</div>
           </div>
 
-          <div class="form-col">
-            <label class="form-label" for="models">可用模型</label>
-            <textarea class="model-list-editor" id="models" placeholder="gpt-4o-mini&#10;gpt-5-mini" oninput="syncModelOptionsFromEditor(); markDirty()"></textarea>
-            <div class="form-sublabel" id="model-help">每行填写一个模型；上方下拉框分别用于选择优化和翻译所调用的专有模型。</div>
+          <div class="form-row">
+            <div class="form-col">
+              <label class="form-label" for="model">全局主模型 (Default Model)</label>
+              <select id="model" onchange="onGlobalModelChange()"></select>
+              <div class="form-sublabel">未单独指定模型的动作将默认继承此主模型</div>
+            </div>
+            <div class="form-col">
+              <label class="form-label" for="translation_model">翻译默认模型</label>
+              <select id="translation_model" onchange="markDirty()"></select>
+              <div class="form-sublabel">翻译动作未指定专用模型时使用</div>
+            </div>
           </div>
 
           <div class="form-row">
@@ -668,48 +801,92 @@
         </div>
       </div>
 
-      <!-- 页面 2：优化规则 -->
-      <div class="page-section" id="page-prompt">
-        <div class="card">
-          <div class="card-title">提示词优化 Prompt 预设</div>
-          <div class="form-col">
-            <label class="form-label" for="system_prompt">系统提示词 (System Prompt)</label>
-            <textarea id="system_prompt" placeholder="你是一个优秀的提示词优化助手..." oninput="markDirty()"></textarea>
-            <div class="form-sublabel" style="margin-top: 4px;">选中文字触发提示词优化时，系统向 AI 发送的基本设定指令。</div>
+      <!-- 页面 2：动作与规则 (Actions & Rules) -->
+      <div class="page-section" id="page-actions">
+        <!-- 动作选择标签条 -->
+        <div class="card" style="padding: 14px 20px;">
+          <div class="card-title" style="margin-bottom: 8px;">
+            <span>动作插槽 (Custom Action Slots)</span>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="addNewAction()">+ 新建动作</button>
           </div>
+          <div class="action-chips-container" id="action-chips-list"></div>
         </div>
 
-        <div class="card">
-          <div class="card-title">文本翻译 Prompt 与语种设置</div>
-          <div class="form-row" style="margin-bottom: 12px;">
+        <!-- 当前选中动作的详情编辑卡片 -->
+        <div class="card" id="action-editor-card">
+          <div class="card-title">
+            <span id="editor-action-title">动作详细设定</span>
+            <button type="button" class="btn btn-danger btn-sm" id="btn-delete-action" style="display: none;" onclick="deleteCurrentAction()">🗑 删除此动作</button>
+          </div>
+
+          <div class="form-row">
+            <div class="form-col">
+              <label class="form-label" for="act_name">动作名称</label>
+              <input type="text" id="act_name" placeholder="例如：代码重构与解释" oninput="onCurrentActionFieldChange()">
+            </div>
+            <div class="form-col">
+              <label class="form-label" for="act_hotkey">触发快捷键</label>
+              <input type="text" id="act_hotkey" placeholder="例如：Ctrl+DoubleF7 或 Alt+Shift+C" oninput="onCurrentActionFieldChange()">
+              <div class="form-sublabel">支持 Ctrl+Double/Triple(F1~F24/A~Z) 或普通组合键</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-col">
+              <label class="form-label" for="act_model">绑定专用模型</label>
+              <select id="act_model" onchange="onActionModelFieldChange()"></select>
+              <div class="form-sublabel">默认继承当前 API 配置的主模型</div>
+            </div>
+            <div class="form-col">
+              <label class="form-label">动作状态</label>
+              <div class="switch-card">
+                <span class="form-label" style="margin: 0; font-size: 13px; font-weight: 500;">启用此动作监听</span>
+                <label class="switch">
+                  <input type="checkbox" id="act_enabled" onchange="onCurrentActionFieldChange()">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="form-sublabel">禁用后将注销其系统全局热键</div>
+            </div>
+          </div>
+
+          <!-- 翻译专用语种设置（仅在 translate 动作时显示） -->
+          <div id="translate-lang-row" class="form-row" style="display: none;">
             <div class="form-col">
               <label class="form-label" for="native_language">母语 (Native Language)</label>
               <input type="text" id="native_language" placeholder="中文" oninput="markDirty()">
-              <div class="form-sublabel">非母语文本默认翻译回该母语语言</div>
+              <div class="form-sublabel">非母语文本自动翻译回该母语</div>
             </div>
             <div class="form-col">
               <label class="form-label" for="target_language">目标翻译语言 (Target Language)</label>
               <input type="text" id="target_language" placeholder="英语" oninput="markDirty()">
-              <div class="form-sublabel">母语文本默认译往的目标外向语言</div>
+              <div class="form-sublabel">母语文本自动译往的目标语言</div>
             </div>
           </div>
+
+          <!-- 标准模式提示词 -->
           <div class="form-col">
-            <label class="form-label" for="translation_prompt">翻译系统提示词 (Translation System Prompt)</label>
-            <textarea id="translation_prompt" placeholder="你是一个高精度的专业双向文本翻译引擎..." style="min-height: 120px;" oninput="markDirty()"></textarea>
-            <div class="form-sublabel" style="margin-top: 4px;">
-              触发独立翻译时向 AI 发送的指导提示词；<b>重要提示：</b>自定义提示词时，建议使用 <code>{native}</code> 与 <code>{target}</code> 占位符（避免使用 XML 标签或容易产生误导的“母语/目标语言”称呼），系统在发向 AI 前会自动将它们渲染嵌入为具体的语种名称。
-            </div>
+            <label class="form-label" for="act_system_prompt">标准模式提示词 (双击 / 默认触发)</label>
+            <textarea id="act_system_prompt" placeholder="你是一个优秀的提示词优化助手..." oninput="onCurrentActionFieldChange()"></textarea>
+            <div class="form-sublabel">快捷键触发（双击/标准模式）时向 AI 发送的基本设定指令。支持 <code>{native}</code> 与 <code>{target}</code> 变量。</div>
+          </div>
+
+          <!-- 深度模式提示词（三击分级） -->
+          <div class="form-col">
+            <label class="form-label" for="act_triple_prompt">✨ 深度模式提示词 (三击手势触发 / 可选)</label>
+            <textarea id="act_triple_prompt" placeholder="（可选）配置后，按住 Ctrl 连按 3 次快捷键将自动触发此深度处理模式..." style="min-height: 90px;" oninput="onCurrentActionFieldChange()"></textarea>
+            <div class="form-sublabel"><b>分级增强：</b>若配置此项，使用多击手势连按 3 次将自动升级为此深度提示词；若留空则双击与三击均使用标准模式。</div>
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-title">文本翻译智能判断说明</div>
+        <div class="card" id="translate-info-card" style="display: none;">
+          <div class="card-title">文本翻译智能判断与双向分级说明</div>
           <div class="info-banner">
-            <div class="info-banner-title">ℹ 大语言模型智能语种判断与参数协同规则</div>
+            <div class="info-banner-title">ℹ 智能翻译双向判断与三击双语对照说明</div>
             <div>
-              • <b>智能语种判定：</b>无需手动指定源语言，由 AI 自动判定。若选区主语种为您的<b>母语 (<span id="label_native_lang">中文</span>)</b>，将准确译为<b>目标翻译语言 (<span id="label_target_lang">英语</span>)</b>；若主语种为任何非母语外文，将准确译回<b>母语 (<span id="label_native_lang2">中文</span>)</b>。<br>
-              • <b>独立翻译模型：</b>每个服务配置均可从各自模型列表中为“提示词优化”和“独立文本翻译”配置不同模型（如快速模型用于翻译，强力模型用于优化）。<br>
-              • <b>专有名词保持：</b>翻译提示词通过特殊参数强制指引 AI 完整保留如 ALPHA-731 等大写唯一代号，剪贴板无缝回填。
+              • <b>智能互译：</b>无需手动选择源语言，AI 自动判定。母语准确译为目标语言，外语准确译回母语。<br>
+              • <b>双击 vs 三击分级：</b>双击为纯文本极速直译；三击为【原文 + 译文】双语结构化对照输出。<br>
+              • <b>占位符自动注入：</b>Prompt 中使用 <code>{native}</code> 与 <code>{target}</code> 会在发送前自动渲染为具体语种。
             </div>
           </div>
         </div>
@@ -718,29 +895,12 @@
       <!-- 页面 3：应用行为 -->
       <div class="page-section" id="page-behavior">
         <div class="card">
-          <div class="card-title">全局热键设置</div>
-          <div class="form-row">
-            <div class="form-col">
-              <label class="form-label" for="hotkey">提示词优化热键</label>
-              <input type="text" id="hotkey" placeholder="Ctrl+DoubleF8" oninput="markDirty()">
-              <div class="form-sublabel">推荐 Ctrl+DoubleF8 / Ctrl+F8</div>
-            </div>
-            <div class="form-col">
-              <label class="form-label" for="translation_hotkey">文本翻译热键</label>
-              <input type="text" id="translation_hotkey" placeholder="Ctrl+DoubleF9" oninput="markDirty()">
-              <div class="form-sublabel">推荐 Ctrl+DoubleF9；与优化热键禁止冲突</div>
-            </div>
-          </div>
-        </div>
-
-
-        <div class="card">
           <div class="card-title">系统与声音行为</div>
 
           <div class="switch-row" style="padding-top: 8px;">
             <div>
               <div class="form-label">完成后播放提示音</div>
-              <div class="form-sublabel">优化成功时播放系统轻柔音频通知</div>
+              <div class="form-sublabel">任务处理完成并写入剪贴板时播放轻柔音频通知</div>
             </div>
             <label class="switch">
               <input type="checkbox" id="play_sound" aria-label="完成后播放提示音" onchange="markDirty()">
@@ -751,7 +911,7 @@
           <div class="switch-row" style="padding-top: 8px;">
             <div>
               <div class="form-label">登录 Windows 后自动启动</div>
-              <div class="form-sublabel">随操作系统自启并在后台托盘运行</div>
+              <div class="form-sublabel">随操作系统自启并在后台托盘静默运行</div>
             </div>
             <label class="switch">
               <input type="checkbox" id="auto_start" aria-label="登录 Windows 后自动启动" onchange="markDirty()">
@@ -776,24 +936,32 @@
   <script>
     let isDirty = false;
     let profilesList = [];
+    let actionsList = [];
+    let currentActionId = 'optimize';
 
     function switchPage(pageId) {
       document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
       document.querySelectorAll('.page-section').forEach(sec => sec.classList.remove('active'));
-      
+
       const activeNav = document.querySelector(`.nav-item[data-target="${pageId}"]`);
       if (activeNav) activeNav.classList.add('active');
-      
+
       const activeSec = document.getElementById(pageId);
       if (activeSec) activeSec.classList.add('active');
 
       const titleMap = {
         'page-service': '模型与服务',
-        'page-prompt': '优化规则',
+        'page-actions': '动作与规则',
         'page-behavior': '应用行为'
       };
       document.getElementById('page-title').innerText = titleMap[pageId] || '设置';
       document.getElementById('profile-actions').style.display = pageId === 'page-service' ? 'flex' : 'none';
+
+      if (pageId === 'page-service') {
+        renderServiceActionChips();
+      } else if (pageId === 'page-actions') {
+        renderActionsChips();
+      }
     }
 
     function toggleSelectOptions() {
@@ -807,6 +975,12 @@
       document.getElementById('select-profile-options').classList.remove('open');
       document.getElementById('select-profile-trigger').setAttribute('aria-expanded', 'false');
       sendAction('switch_profile', { name });
+    }
+
+    function toggleKeyVisibilityManual() {
+      const chk = document.getElementById('show_key');
+      chk.checked = !chk.checked;
+      toggleKeyVisibility();
     }
 
     function toggleKeyVisibility() {
@@ -824,47 +998,343 @@
       return models;
     }
 
+    function matchingModel(models, selectedModel) {
+      const normalized = String(selectedModel || '').toLowerCase();
+      return models.find(model => model.toLowerCase() === normalized);
+    }
+
     function renderModelOptions(models, selectedModel, selectedTranslationModel) {
       const select = document.getElementById('model');
-      const transSelect = document.getElementById('translation_model');
+      const translationSelect = document.getElementById('translation_model');
       const normalized = normalizeModelNames(models);
+
       select.innerHTML = '';
-      if (transSelect) transSelect.innerHTML = '';
+      translationSelect.innerHTML = '';
       normalized.forEach(model => {
         const option = document.createElement('option');
         option.value = model;
         option.innerText = model;
         select.appendChild(option);
-
-        if (transSelect) {
-          const transOption = document.createElement('option');
-          transOption.value = model;
-          transOption.innerText = model;
-          transSelect.appendChild(transOption);
-        }
+        translationSelect.appendChild(option.cloneNode(true));
       });
       if (normalized.includes(selectedModel)) {
         select.value = selectedModel;
       } else if (normalized.length > 0) {
         select.value = normalized[0];
       }
-
-      if (transSelect) {
-        if (normalized.includes(selectedTranslationModel)) {
-          transSelect.value = selectedTranslationModel;
-        } else if (normalized.includes(selectedModel)) {
-          transSelect.value = selectedModel;
-        } else if (normalized.length > 0) {
-          transSelect.value = normalized[0];
-        }
+      if (normalized.includes(selectedTranslationModel)) {
+        translationSelect.value = selectedTranslationModel;
+      } else {
+        translationSelect.value = select.value;
       }
+
+      renderAllActionModelDropdowns();
+    }
+
+    function renderAllActionModelDropdowns() {
+      const models = normalizeModelNames(document.getElementById('models').value.split(/\r?\n/));
+
+      // 1.「模型与服务」中的动作专属模型下拉框
+      const svcSelect = document.getElementById('svc_action_model');
+      if (svcSelect) {
+        svcSelect.innerHTML = '<option value="">继承全局主模型 (默认)</option>';
+        models.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m;
+          opt.innerText = m;
+          svcSelect.appendChild(opt);
+        });
+        const curAction = actionsList.find(a => a.id === currentActionId);
+        const selectedActionModel = curAction && matchingModel(models, curAction.model);
+        if (curAction && curAction.model && !selectedActionModel) {
+          const unavailable = document.createElement('option');
+          unavailable.value = curAction.model;
+          unavailable.innerText = `${curAction.model}（当前配置不可用，将回退）`;
+          svcSelect.appendChild(unavailable);
+        }
+        svcSelect.value = selectedActionModel || ((curAction && curAction.model) ? curAction.model : '');
+      }
+
+      // 2.「动作与规则」中的动作专用模型下拉框
+      const actSelect = document.getElementById('act_model');
+      if (actSelect) {
+        actSelect.innerHTML = '<option value="">继承当前配置主模型</option>';
+        models.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m;
+          opt.innerText = m;
+          actSelect.appendChild(opt);
+        });
+        const curAction = actionsList.find(a => a.id === currentActionId);
+        const selectedActionModel = curAction && matchingModel(models, curAction.model);
+        if (curAction && curAction.model && !selectedActionModel) {
+          const unavailable = document.createElement('option');
+          unavailable.value = curAction.model;
+          unavailable.innerText = `${curAction.model}（当前配置不可用，将回退）`;
+          actSelect.appendChild(unavailable);
+        }
+        actSelect.value = selectedActionModel || ((curAction && curAction.model) ? curAction.model : '');
+      }
+
+      updateServiceActionTip();
     }
 
     function syncModelOptionsFromEditor() {
       const selectedModel = document.getElementById('model').value;
-      const selectedTranslationModel = document.getElementById('translation_model') ? document.getElementById('translation_model').value : '';
+      const selectedTranslationModel = document.getElementById('translation_model').value;
       const models = document.getElementById('models').value.split(/\r?\n/);
       renderModelOptions(models, selectedModel, selectedTranslationModel);
+    }
+
+    function onGlobalModelChange() {
+      updateServiceActionTip();
+      markDirty();
+    }
+
+    /* ---------------- 「模型与服务」动作卡片与测试 ---------------- */
+    function renderServiceActionChips() {
+      const container = document.getElementById('service-action-chips-list');
+      if (!container) return;
+      container.innerHTML = '';
+
+      if (!actionsList.some(a => a.id === currentActionId) && actionsList.length > 0) {
+        currentActionId = actionsList[0].id;
+      }
+
+      actionsList.forEach(action => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.setAttribute('aria-pressed', String(action.id === currentActionId));
+        chip.className = 'action-chip' +
+          (action.id === currentActionId ? ' active' : '') +
+          (!action.enabled ? ' disabled' : '');
+
+        const dot = document.createElement('span');
+        dot.className = 'action-dot';
+        chip.appendChild(dot);
+
+        const nameSpan = document.createElement('span');
+        nameSpan.innerText = action.name;
+        chip.appendChild(nameSpan);
+
+        const modelBadge = document.createElement('span');
+        modelBadge.className = 'action-badge';
+        modelBadge.innerText = action.model ? action.model : '继承主模型';
+        chip.appendChild(modelBadge);
+
+        chip.onclick = () => selectAction(action.id);
+        container.appendChild(chip);
+      });
+
+      populateServiceActionPanel();
+    }
+
+    function populateServiceActionPanel() {
+      const action = actionsList.find(a => a.id === currentActionId) || actionsList[0];
+      if (!action) return;
+      currentActionId = action.id;
+
+      document.getElementById('svc-current-action-name-title').innerText = action.name;
+      document.getElementById('svc-current-action-hotkey-badge').innerText = `触发快捷键：${action.hotkey || '未设置'}`;
+
+      const svcSelect = document.getElementById('svc_action_model');
+      if (svcSelect) {
+        const models = normalizeModelNames(document.getElementById('models').value.split(/\r?\n/));
+        svcSelect.value = matchingModel(models, action.model) || action.model || '';
+      }
+      updateServiceActionTip();
+    }
+
+    function updateServiceActionTip() {
+      const tip = document.getElementById('svc_action_model_tip');
+      if (!tip) return;
+      const globalModel = document.getElementById('model').value || '未选择';
+      const models = normalizeModelNames(document.getElementById('models').value.split(/\r?\n/));
+      const action = actionsList.find(a => a.id === currentActionId);
+      const availableModel = action && matchingModel(models, action.model);
+      if (action && action.model && availableModel) {
+        tip.innerText = `当前实际生效：指定专有模型 (${availableModel})`;
+      } else if (action && action.model) {
+        const translationModel = document.getElementById('translation_model').value || globalModel;
+        const fallbackModel = String(action.id).toLowerCase() === 'translate' ? translationModel : globalModel;
+        tip.innerText = `指定模型不可用，将回退：${fallbackModel}`;
+      } else {
+        tip.innerText = `当前实际生效：继承主模型 (${globalModel})`;
+      }
+    }
+
+    function onServiceActionModelChange() {
+      const action = actionsList.find(a => a.id === currentActionId);
+      if (!action) return;
+
+      action.model = document.getElementById('svc_action_model').value;
+
+      // 同步到「动作与规则」的下拉框
+      const actModel = document.getElementById('act_model');
+      if (actModel) actModel.value = action.model;
+
+      renderServiceActionChips();
+      renderActionsChips();
+      markDirty();
+    }
+
+    function testCurrentActionApi() {
+      const action = actionsList.find(a => a.id === currentActionId);
+      if (!action) return;
+      sendAction('test_action_api', { action_id: action.id });
+    }
+
+    /* ---------------- 「动作与规则」动作管理 ---------------- */
+    function renderActionsChips() {
+      const container = document.getElementById('action-chips-list');
+      if (!container) return;
+      container.innerHTML = '';
+
+      if (!actionsList.some(a => a.id === currentActionId) && actionsList.length > 0) {
+        currentActionId = actionsList[0].id;
+      }
+
+      actionsList.forEach(action => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.setAttribute('aria-pressed', String(action.id === currentActionId));
+        chip.className = 'action-chip' +
+          (action.id === currentActionId ? ' active' : '') +
+          (!action.enabled ? ' disabled' : '');
+
+        const dot = document.createElement('span');
+        dot.className = 'action-dot';
+        chip.appendChild(dot);
+
+        const nameSpan = document.createElement('span');
+        nameSpan.innerText = action.name;
+        chip.appendChild(nameSpan);
+
+        if (action.hotkey) {
+          const badge = document.createElement('span');
+          badge.className = 'action-badge';
+          badge.innerText = action.hotkey;
+          chip.appendChild(badge);
+        }
+
+        chip.onclick = () => selectAction(action.id);
+        container.appendChild(chip);
+      });
+
+      populateActionEditor();
+    }
+
+    function selectAction(id) {
+      currentActionId = id;
+      renderActionsChips();
+      renderServiceActionChips();
+    }
+
+    function populateActionEditor() {
+      const action = actionsList.find(a => a.id === currentActionId) || actionsList[0];
+      if (!action) return;
+      currentActionId = action.id;
+
+      document.getElementById('editor-action-title').innerText = `动作设定 - ${action.name}`;
+      document.getElementById('act_name').value = action.name || '';
+      document.getElementById('act_hotkey').value = action.hotkey || '';
+      document.getElementById('act_enabled').checked = action.enabled !== false;
+      document.getElementById('act_system_prompt').value = action.system_prompt || '';
+      document.getElementById('act_triple_prompt').value = action.triple_prompt || '';
+
+      const actionId = String(action.id).toLowerCase();
+      const isBuiltin = actionId === 'optimize' || actionId === 'translate';
+      document.getElementById('btn-delete-action').style.display = isBuiltin ? 'none' : 'inline-flex';
+      document.getElementById('translate-lang-row').style.display = actionId === 'translate' ? 'flex' : 'none';
+      document.getElementById('translate-info-card').style.display = actionId === 'translate' ? 'flex' : 'none';
+
+      renderAllActionModelDropdowns();
+    }
+
+    function onCurrentActionFieldChange() {
+      const action = actionsList.find(a => a.id === currentActionId);
+      if (!action) return;
+
+      action.name = document.getElementById('act_name').value;
+      action.hotkey = document.getElementById('act_hotkey').value;
+      action.enabled = document.getElementById('act_enabled').checked;
+      action.system_prompt = document.getElementById('act_system_prompt').value;
+      action.triple_prompt = document.getElementById('act_triple_prompt').value;
+
+      renderActionsChips();
+      renderServiceActionChips();
+      markDirty();
+    }
+
+    function onActionModelFieldChange() {
+      const action = actionsList.find(a => a.id === currentActionId);
+      if (!action) return;
+
+      action.model = document.getElementById('act_model').value;
+
+      const svcModel = document.getElementById('svc_action_model');
+      if (svcModel) svcModel.value = action.model;
+
+      renderServiceActionChips();
+      renderActionsChips();
+      markDirty();
+    }
+
+    function addNewAction() {
+      const newIndex = actionsList.length + 1;
+      const newId = `action_${Date.now()}`;
+      const hotkey = nextAvailableActionHotkey();
+      const newAction = {
+        id: newId,
+        name: `新动作 ${newIndex}`,
+        hotkey,
+        model: '',
+        system_prompt: '请处理选中文本数据，仅返回处理结果。',
+        triple_prompt: '',
+        enabled: Boolean(hotkey)
+      };
+      actionsList.push(newAction);
+      currentActionId = newId;
+      renderActionsChips();
+      renderServiceActionChips();
+      markDirty();
+    }
+
+    function nextAvailableActionHotkey() {
+      const occupiedFunctionKeys = new Set();
+      actionsList
+        .filter(action => action.enabled)
+        .forEach(action => {
+          const hotkey = String(action.hotkey || '').replace(/\s+/g, '').toUpperCase();
+          const doubleMatch = hotkey.match(/^CTRL\+DOUBLEF(\d+)$/);
+          if (doubleMatch) {
+            occupiedFunctionKeys.add(Number(doubleMatch[1]));
+            return;
+          }
+
+          const tokens = hotkey.split('+');
+          const hasControl = tokens.includes('CTRL') || tokens.includes('CONTROL');
+          const mainKey = tokens.find(token => /^F\d+$/.test(token));
+          if (hasControl && mainKey) {
+            occupiedFunctionKeys.add(Number(mainKey.slice(1)));
+          }
+        });
+
+      for (let number = 1; number <= 24; number += 1) {
+        if (number === 12) continue;
+        if (!occupiedFunctionKeys.has(number)) return `Ctrl+DoubleF${number}`;
+      }
+      return '';
+    }
+
+    function deleteCurrentAction() {
+      const actionId = String(currentActionId).toLowerCase();
+      if (actionId === 'optimize' || actionId === 'translate') return;
+      actionsList = actionsList.filter(a => a.id !== currentActionId);
+      currentActionId = actionsList[0] ? actionsList[0].id : 'optimize';
+      renderActionsChips();
+      renderServiceActionChips();
+      markDirty();
     }
 
     function markDirty() {
@@ -873,11 +1343,7 @@
       document.getElementById('status-text').innerText = '配置已修改（未保存）';
     }
 
-    let activeTestingTarget = null;
-
     function sendAction(action, extra = {}) {
-      if (action === 'test_api') activeTestingTarget = 'api';
-      if (action === 'test_translation_api') activeTestingTarget = 'translation';
       const payload = {
         action,
         data: collectFormData(),
@@ -891,21 +1357,25 @@
     }
 
     function collectFormData() {
+      const optAction = actionsList.find(a => String(a.id).toLowerCase() === 'optimize');
+      const transAction = actionsList.find(a => String(a.id).toLowerCase() === 'translate');
+
       return {
         profile_name: document.getElementById('profile_name').value,
         api_key: document.getElementById('api_key').value,
         base_url: document.getElementById('base_url').value,
         models: normalizeModelNames(document.getElementById('models').value.split(/\r?\n/)),
         model: document.getElementById('model').value,
-        translation_model: document.getElementById('translation_model') ? document.getElementById('translation_model').value : '',
+        translation_model: document.getElementById('translation_model').value,
         temperature: document.getElementById('temperature').value,
         max_tokens: document.getElementById('max_tokens').value,
-        system_prompt: document.getElementById('system_prompt').value,
-        translation_prompt: document.getElementById('translation_prompt') ? document.getElementById('translation_prompt').value : '',
-        hotkey: document.getElementById('hotkey').value,
-        translation_hotkey: document.getElementById('translation_hotkey') ? document.getElementById('translation_hotkey').value : '',
-        native_language: document.getElementById('native_language') ? document.getElementById('native_language').value : '',
-        target_language: document.getElementById('target_language') ? document.getElementById('target_language').value : '',
+        system_prompt: optAction ? optAction.system_prompt : '',
+        translation_prompt: transAction ? transAction.system_prompt : '',
+        hotkey: optAction ? optAction.hotkey : '',
+        translation_hotkey: transAction ? transAction.hotkey : '',
+        native_language: document.getElementById('native_language') ? document.getElementById('native_language').value : '中文',
+        target_language: document.getElementById('target_language') ? document.getElementById('target_language').value : '英语',
+        actions: actionsList,
         play_sound: document.getElementById('play_sound').checked,
         auto_start: document.getElementById('auto_start').checked
       };
@@ -939,7 +1409,11 @@
             : [data.current_profile.model]
         );
         document.getElementById('models').value = models.join('\n');
-        renderModelOptions(models, data.current_profile.model || '', data.current_profile.translation_model || '');
+        renderModelOptions(
+          models,
+          data.current_profile.model || '',
+          data.current_profile.translation_model || data.current_profile.model || ''
+        );
         document.getElementById('temperature').value = data.current_profile.temperature ?? '0.3';
         document.getElementById('max_tokens').value = data.current_profile.max_tokens ?? '512';
       }
@@ -949,28 +1423,23 @@
       isDirty = false;
       applyProfileState(data);
 
-      if (data.system_prompt !== undefined) document.getElementById('system_prompt').value = data.system_prompt;
-      if (data.translation_prompt !== undefined && document.getElementById('translation_prompt')) {
-        document.getElementById('translation_prompt').value = data.translation_prompt;
+      if (data.actions && Array.isArray(data.actions)) {
+        actionsList = data.actions.map(action => ({ ...action, model: action.model || '' }));
+      } else {
+        actionsList = [];
       }
-      if (data.hotkey !== undefined) document.getElementById('hotkey').value = data.hotkey;
-      if (data.translation_hotkey !== undefined && document.getElementById('translation_hotkey')) {
-        document.getElementById('translation_hotkey').value = data.translation_hotkey;
-      }
+
       if (data.native_language !== undefined && document.getElementById('native_language')) {
         document.getElementById('native_language').value = data.native_language;
-        const lbl = document.getElementById('label_native_lang');
-        const lbl2 = document.getElementById('label_native_lang2');
-        if (lbl) lbl.innerText = data.native_language;
-        if (lbl2) lbl2.innerText = data.native_language;
       }
       if (data.target_language !== undefined && document.getElementById('target_language')) {
         document.getElementById('target_language').value = data.target_language;
-        const lbl = document.getElementById('label_target_lang');
-        if (lbl) lbl.innerText = data.target_language;
       }
       if (data.play_sound !== undefined) document.getElementById('play_sound').checked = data.play_sound;
       if (data.auto_start !== undefined) document.getElementById('auto_start').checked = data.auto_start;
+
+      renderActionsChips();
+      renderServiceActionChips();
 
       if (data.status) {
         window.updateStatus(data.status, data.is_error, data.is_success, false);
@@ -989,21 +1458,10 @@
       badge.title = status;
       badge.className = 'status-badge ' + (isError ? 'error' : (isSuccess ? 'success' : ''));
 
-      if (!isTesting) {
-        activeTestingTarget = null;
-      }
-      const isTransTest = activeTestingTarget === 'translation' || (isTesting && status && status.indexOf('翻译') !== -1);
-      const isApiTest = activeTestingTarget === 'api' || (isTesting && !isTransTest);
-
-      const testButton = document.getElementById('test-api');
-      if (testButton) {
-        testButton.disabled = Boolean(isTesting);
-        testButton.innerText = (isTesting && isApiTest) ? '测试中…' : '测试优化';
-      }
-      const testTransButton = document.getElementById('test-translation-api');
-      if (testTransButton) {
-        testTransButton.disabled = Boolean(isTesting);
-        testTransButton.innerText = (isTesting && isTransTest) ? '测试中…' : '测试翻译';
+      const testBtn = document.getElementById('btn-test-action-api');
+      if (testBtn) {
+        testBtn.disabled = Boolean(isTesting);
+        testBtn.innerText = isTesting ? '测试中…' : '🚀 测试此动作连接';
       }
     };
 
