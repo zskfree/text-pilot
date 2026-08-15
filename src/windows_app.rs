@@ -21,11 +21,13 @@ use windows::Win32::Foundation::{
     CloseHandle, GetLastError, COLORREF, ERROR_ALREADY_EXISTS, HINSTANCE, HWND, LPARAM, LRESULT,
     POINT, RECT, WPARAM,
 };
+#[cfg(test)]
+use windows::Win32::Graphics::Gdi::UpdateWindow;
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, CreatePen, CreateRoundRectRgn, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint,
     GetMonitorInfoW, InvalidateRect, MonitorFromRect, RoundRect, SelectObject, SetBkMode,
-    SetTextColor, SetWindowRgn, UpdateWindow, DT_END_ELLIPSIS, DT_SINGLELINE, DT_VCENTER, HFONT,
-    MONITORINFO, MONITOR_DEFAULTTONEAREST, PAINTSTRUCT, TRANSPARENT,
+    SetTextColor, SetWindowRgn, DT_END_ELLIPSIS, DT_SINGLELINE, DT_VCENTER, HFONT, MONITORINFO,
+    MONITOR_DEFAULTTONEAREST, PAINTSTRUCT, TRANSPARENT,
 };
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::Diagnostics::Debug::MessageBeep;
@@ -72,6 +74,7 @@ const MENU_RELOAD: u32 = 1002;
 const MENU_EXIT: u32 = 1003;
 const MENU_LANGUAGE_ENGLISH: u32 = 1004;
 const MENU_LANGUAGE_CHINESE: u32 = 1005;
+const MENU_LAST_ERROR: u32 = 1006;
 const STATUS_HEIGHT: i32 = 34;
 const STATUS_MIN_WIDTH: i32 = 112;
 const STATUS_MAX_WIDTH: i32 = 300;
@@ -118,6 +121,7 @@ static STATUS_POPUP: Mutex<StatusPopupState> = Mutex::new(StatusPopupState {
     anchor: None,
     kind: StatusKind::Neutral,
 });
+static LAST_ERROR: Mutex<Option<(String, String)>> = Mutex::new(None);
 
 #[derive(Clone, Debug, Default)]
 struct GestureSlot {
@@ -457,12 +461,19 @@ pub fn run() -> Result<(), AppError> {
     }
 
     let mut message = MSG::default();
-    while unsafe { GetMessageW(&mut message, None, 0, 0) }.as_bool() {
+    let message_loop_error = loop {
+        let status = unsafe { GetMessageW(&mut message, None, 0, 0) };
+        if status.0 == -1 {
+            break Some(AppError(WindowsError::from_thread().to_string()));
+        }
+        if status.0 == 0 {
+            break None;
+        }
         unsafe {
             let _ = TranslateMessage(&message);
             DispatchMessageW(&message);
         }
-    }
+    };
 
     unsafe {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
@@ -479,7 +490,10 @@ pub fn run() -> Result<(), AppError> {
         let _ = DestroyIcon(state.icon);
         let _ = CloseHandle(mutex);
     }
-    Ok(())
+    match message_loop_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 fn load_startup_config(path: &std::path::Path) -> Result<(Config, bool, Option<String>), AppError> {
@@ -616,16 +630,11 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
                     Ok(()) => {
                         (*request).error = None;
                         update_tooltip(hwnd, state.icon, &idle_tooltip_text(&state.config));
-                        if !state.settings_hwnd.is_invalid()
-                            && IsWindow(Some(state.settings_hwnd)).as_bool()
-                        {
-                            settings::set_locale(state.settings_hwnd, state.config.ui_language);
-                        }
                         return LRESULT(1);
                     }
                     Err(error) => {
                         state.config.ui_language = previous;
-                        (*request).error = Some(error.to_string());
+                        (*request).error = Some(error.localized_message((*request).language));
                         return LRESULT(0);
                     }
                 }
@@ -656,6 +665,7 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
                     .is_err()
                 {
                     state.busy = false;
+                    update_tooltip(hwnd, state.icon, &idle_tooltip_text(&state.config));
                     (*request).error = Some(
                         i18n::text(state.config.ui_language, Message::WorkerUnavailable).into(),
                     );
@@ -690,6 +700,7 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
                     .is_err()
                 {
                     state.busy = false;
+                    update_tooltip(hwnd, state.icon, &idle_tooltip_text(&state.config));
                     (*request).error = Some(
                         i18n::text(state.config.ui_language, Message::WorkerUnavailable).into(),
                     );
@@ -730,6 +741,7 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
                     .is_err()
                 {
                     state.busy = false;
+                    update_tooltip(hwnd, state.icon, &idle_tooltip_text(&state.config));
                     (*request).error = Some(
                         i18n::text(state.config.ui_language, Message::WorkerUnavailable).into(),
                     );
@@ -807,9 +819,6 @@ unsafe fn on_action_triggered(
                 ActionTier::Deep => i18n::format(language, Message::ProcessingDeep, &action_name),
             };
 
-            update_tooltip(hwnd, state.icon, &message);
-            show_status_popup(&message, StatusKind::Progress, true);
-
             let command = WorkerCommand::ExecuteAction {
                 task_id,
                 action,
@@ -821,6 +830,7 @@ unsafe fn on_action_triggered(
             if state.worker_tx.send(command).is_err() {
                 state.busy = false;
                 state.active_task_id = None;
+                update_tooltip(hwnd, state.icon, &idle_tooltip_text(&state.config));
                 notify(
                     hwnd,
                     state.icon,
@@ -828,7 +838,11 @@ unsafe fn on_action_triggered(
                     i18n::text(language, Message::WorkerUnavailable),
                     true,
                 );
+                return;
             }
+
+            update_tooltip(hwnd, state.icon, &message);
+            show_status_popup(&message, StatusKind::Progress, true);
         }
         Ok(None) => notify(
             hwnd,
@@ -841,7 +855,7 @@ unsafe fn on_action_triggered(
             hwnd,
             state.icon,
             i18n::text(language, Message::ReadSelectionFailed),
-            &error.to_string(),
+            &error.localized_message(language),
             true,
         ),
     }
@@ -954,6 +968,18 @@ unsafe fn show_tray_menu(hwnd: HWND, state: &mut AppState) {
         MENU_RELOAD as usize,
         PCWSTR(wide(i18n::text(language, Message::ReloadConfig)).as_ptr()),
     );
+    let has_last_error = LAST_ERROR
+        .lock()
+        .map(|error| error.is_some())
+        .unwrap_or(false);
+    if has_last_error {
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING,
+            MENU_LAST_ERROR as usize,
+            PCWSTR(wide(i18n::text(language, Message::ViewLastError)).as_ptr()),
+        );
+    }
     let english_flags = if language == UiLanguage::English {
         MF_STRING | MF_CHECKED
     } else {
@@ -1006,6 +1032,7 @@ unsafe fn show_tray_menu(hwnd: HWND, state: &mut AppState) {
     match command.0 as u32 {
         MENU_SETTINGS => open_config(hwnd, state),
         MENU_RELOAD => reload_config(hwnd, state),
+        MENU_LAST_ERROR => show_last_error(state.config.ui_language),
         MENU_LANGUAGE_ENGLISH => set_ui_language(hwnd, state, UiLanguage::English),
         MENU_LANGUAGE_CHINESE => set_ui_language(hwnd, state, UiLanguage::ChineseSimplified),
         MENU_EXIT => {
@@ -1023,7 +1050,13 @@ unsafe fn set_ui_language(hwnd: HWND, state: &mut AppState, language: UiLanguage
     state.config.ui_language = language;
     if let Err(error) = config::save(&state.config_path, &state.config) {
         state.config.ui_language = previous;
-        notify(hwnd, state.icon, "TextPilot", &error.to_string(), true);
+        notify(
+            hwnd,
+            state.icon,
+            "TextPilot",
+            &error.localized_message(previous),
+            true,
+        );
         return;
     }
     update_tooltip(hwnd, state.icon, &idle_tooltip_text(&state.config));
@@ -1080,7 +1113,7 @@ unsafe fn reload_config(hwnd: HWND, state: &mut AppState) {
                 hwnd,
                 state.icon,
                 i18n::text(state.config.ui_language, Message::ReloadFailed),
-                &error.to_string(),
+                &error.localized_message(state.config.ui_language),
                 true,
             );
             return;
@@ -1118,7 +1151,9 @@ unsafe fn apply_config(
     if state.busy {
         return Err(i18n::text(state.config.ui_language, Message::ApplyBusy).into());
     }
-    new_config.validate().map_err(|error| error.to_string())?;
+    new_config
+        .validate()
+        .map_err(|error| error.localized_message(new_config.ui_language))?;
 
     let old_config = state.config.clone();
     let old_registered = state.hotkeys_registered;
@@ -1157,7 +1192,7 @@ unsafe fn apply_config(
                 let _ = activate_hotkeys(hwnd, &old_config);
             }
             let _ = startup::set_auto_start(old_auto_start, &state.exe_path);
-            return Err(error.to_string());
+            return Err(error.localized_message(new_config.ui_language));
         }
     }
 
@@ -1187,7 +1222,7 @@ fn start_worker(
                     let result = recover_worker_operation(config.ui_language, || {
                         client
                             .execute_action_request(&config, &action, tier, &text, task_id)
-                            .map_err(|error| error.to_string())
+                            .map_err(|error| error.localized_message(config.ui_language))
                     });
                     if result_tx
                         .send(WorkerResult::ExecuteAction {
@@ -1211,7 +1246,7 @@ fn start_worker(
                     let result = recover_worker_operation(config.ui_language, || {
                         client
                             .test_connection(&config)
-                            .map_err(|error| error.to_string())
+                            .map_err(|error| error.localized_message(config.ui_language))
                     });
                     if result_tx
                         .send(WorkerResult::TestApi {
@@ -1234,7 +1269,7 @@ fn start_worker(
                     let result = recover_worker_operation(config.ui_language, || {
                         client
                             .test_translation_connection(&config)
-                            .map_err(|error| error.to_string())
+                            .map_err(|error| error.localized_message(config.ui_language))
                     });
                     if result_tx
                         .send(WorkerResult::TestTranslationApi {
@@ -1259,7 +1294,7 @@ fn start_worker(
                     let result = recover_worker_operation(config.ui_language, || {
                         client
                             .test_action_connection(&config, &action)
-                            .map_err(|error| error.to_string())
+                            .map_err(|error| error.localized_message(config.ui_language))
                     });
                     if result_tx
                         .send(WorkerResult::TestActionApi {
@@ -1588,7 +1623,10 @@ fn update_tooltip(hwnd: HWND, icon: HICON, text: &str) {
 }
 
 fn notify(hwnd: HWND, icon: HICON, title: &str, message: &str, is_error: bool) {
-    let _ = (hwnd, icon, title);
+    let _ = (hwnd, icon);
+    if is_error {
+        remember_last_error(title, message);
+    }
     show_status_popup(
         message,
         if is_error {
@@ -1600,6 +1638,27 @@ fn notify(hwnd: HWND, icon: HICON, title: &str, message: &str, is_error: bool) {
     );
 }
 
+fn remember_last_error(title: &str, message: &str) {
+    if let Ok(mut last_error) = LAST_ERROR.lock() {
+        *last_error = Some((title.to_string(), message.to_string()));
+    }
+}
+
+unsafe fn show_last_error(language: UiLanguage) {
+    let error = LAST_ERROR.lock().ok().and_then(|error| error.clone());
+    let Some((title, message)) = error else {
+        return;
+    };
+    let content = wide(&format!("{title}\n\n{message}"));
+    let dialog_title = wide(i18n::text(language, Message::LastErrorTitle));
+    MessageBoxW(
+        None,
+        PCWSTR(content.as_ptr()),
+        PCWSTR(dialog_title.as_ptr()),
+        MB_OK | MB_ICONERROR,
+    );
+}
+
 fn show_status_popup(message: &str, kind: StatusKind, new_task: bool) {
     let concise: String = message.chars().take(80).collect();
     let dpi = popup_dpi();
@@ -1607,14 +1666,16 @@ fn show_status_popup(message: &str, kind: StatusKind, new_task: bool) {
     let height = popup_scale(STATUS_HEIGHT, dpi);
     let corner_radius = popup_scale(10, dpi);
     let text = wide(&concise);
-    let Ok(mut state) = STATUS_POPUP.lock() else {
-        return;
+
+    let existing_hwnd = match STATUS_POPUP.lock() {
+        Ok(state) => state.hwnd,
+        Err(_) => return,
     };
-    if state.hwnd == 0 {
+    let popup = if existing_hwnd == 0 {
         let Ok(module) = (unsafe { GetModuleHandleW(None) }) else {
             return;
         };
-        let popup = unsafe {
+        let created = unsafe {
             CreateWindowExW(
                 WINDOW_EX_STYLE(
                     WS_EX_TOPMOST.0 | WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0 | WS_EX_LAYERED.0,
@@ -1632,22 +1693,44 @@ fn show_status_popup(message: &str, kind: StatusKind, new_task: bool) {
                 None,
             )
         };
-        let Ok(popup) = popup else {
+        let Ok(created) = created else {
             return;
         };
-        state.hwnd = popup.0 as isize;
         unsafe {
-            let _ = SetLayeredWindowAttributes(popup, COLORREF(0), 206, LWA_ALPHA);
+            let _ = SetLayeredWindowAttributes(created, COLORREF(0), 206, LWA_ALPHA);
         }
-    }
-    if new_task || !state.visible || state.anchor.is_none() {
-        state.anchor = Some(capture_popup_anchor(dpi));
-    }
-    let popup = HWND(state.hwnd as *mut c_void);
-    let anchor = state.anchor.unwrap_or_else(|| capture_popup_anchor(dpi));
+        let Ok(mut state) = STATUS_POPUP.lock() else {
+            unsafe {
+                let _ = DestroyWindow(created);
+            }
+            return;
+        };
+        state.hwnd = created.0 as isize;
+        created
+    } else {
+        HWND(existing_hwnd as *mut c_void)
+    };
+
+    let should_capture_anchor = match STATUS_POPUP.lock() {
+        Ok(state) => new_task || !state.visible || state.anchor.is_none(),
+        Err(_) => return,
+    };
+    let captured_anchor = should_capture_anchor.then(|| capture_popup_anchor(dpi));
+    let anchor = match STATUS_POPUP.lock() {
+        Ok(mut state) => {
+            if let Some(anchor) = captured_anchor {
+                state.anchor = Some(anchor);
+            }
+            state.kind = kind;
+            match state.anchor {
+                Some(anchor) => anchor,
+                None => return,
+            }
+        }
+        Err(_) => return,
+    };
     let display_width = width.min(anchor.max_width);
     let (x, y) = anchor.position(display_width);
-    state.kind = kind;
     unsafe {
         let _ = SetWindowTextW(popup, PCWSTR(text.as_ptr()));
         let region = CreateRoundRectRgn(
@@ -1669,7 +1752,6 @@ fn show_status_popup(message: &str, kind: StatusKind, new_task: bool) {
             SWP_NOACTIVATE | SWP_SHOWWINDOW,
         );
         let _ = InvalidateRect(Some(popup), None, false);
-        let _ = UpdateWindow(popup);
         let _ = KillTimer(Some(popup), 1);
         let keep_open = new_task || kind == StatusKind::Progress;
         if !keep_open {
@@ -1681,7 +1763,11 @@ fn show_status_popup(message: &str, kind: StatusKind, new_task: bool) {
             SetTimer(Some(popup), 1, duration, Some(status_popup_timer));
         }
     }
-    state.visible = true;
+    if let Ok(mut state) = STATUS_POPUP.lock() {
+        if state.hwnd == popup.0 as isize {
+            state.visible = true;
+        }
+    }
 }
 
 fn status_text_width(message: &str, dpi: u32) -> i32 {
@@ -1981,9 +2067,86 @@ mod status_popup_tests {
     use super::*;
 
     #[test]
+    fn status_popup_paints_without_blocking_the_ui_thread() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        if let Ok(mut state) = STATUS_POPUP.lock() {
+            *state = StatusPopupState {
+                hwnd: 0,
+                visible: false,
+                anchor: None,
+                kind: StatusKind::Neutral,
+            };
+        }
+
+        let (result_tx, result_rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let result = unsafe {
+                let instance = match GetModuleHandleW(None) {
+                    Ok(module) => HINSTANCE(module.0),
+                    Err(_) => {
+                        let _ = result_tx.send(false);
+                        return;
+                    }
+                };
+                let class = WNDCLASSW {
+                    hInstance: instance,
+                    lpszClassName: STATUS_WINDOW_CLASS,
+                    lpfnWndProc: Some(status_window_proc),
+                    ..Default::default()
+                };
+                if RegisterClassW(&class) == 0 {
+                    let _ = result_tx.send(false);
+                    return;
+                }
+
+                show_status_popup("Processing regression test", StatusKind::Progress, true);
+                let popup = STATUS_POPUP
+                    .lock()
+                    .ok()
+                    .map(|state| HWND(state.hwnd as *mut c_void))
+                    .unwrap_or_default();
+                if popup.is_invalid() {
+                    false
+                } else {
+                    let _ = UpdateWindow(popup);
+                    let mut text = [0_u16; 96];
+                    let length =
+                        windows::Win32::UI::WindowsAndMessaging::GetWindowTextW(popup, &mut text);
+                    let _ = DestroyWindow(popup);
+                    length > 0
+                }
+            };
+
+            if let Ok(mut state) = STATUS_POPUP.lock() {
+                state.hwnd = 0;
+                state.visible = false;
+                state.anchor = None;
+            }
+            let _ = result_tx.send(result);
+        });
+
+        assert_eq!(
+            result_rx.recv_timeout(Duration::from_secs(2)),
+            Ok(true),
+            "状态框显示或 WM_PAINT 被互斥锁重入阻塞"
+        );
+    }
+
+    #[test]
     fn width_stays_within_compact_limits() {
         assert_eq!(status_text_width("已复制", 96), STATUS_MIN_WIDTH);
         assert_eq!(status_text_width(&"错误".repeat(40), 96), STATUS_MAX_WIDTH);
+    }
+
+    #[test]
+    fn full_error_detail_remains_available_after_compact_notification() {
+        let detail = "provider detail".repeat(40);
+        remember_last_error("API failed", &detail);
+
+        let stored = LAST_ERROR.lock().unwrap().clone();
+        assert_eq!(stored, Some(("API failed".into(), detail)));
     }
 
     #[test]

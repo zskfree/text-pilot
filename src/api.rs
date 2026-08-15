@@ -1,4 +1,4 @@
-use crate::config::{ApiProfile, Config};
+use crate::config::{ApiProfile, Config, UiLanguage};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::time::Duration;
@@ -25,18 +25,61 @@ pub enum ApiError {
 
 impl Display for ApiError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.localized_message(UiLanguage::ChineseSimplified))
+    }
+}
+
+impl ApiError {
+    pub fn localized_message(&self, language: UiLanguage) -> String {
         match self {
-            Self::InvalidConfig(message) => write!(formatter, "API 配置无效：{message}"),
+            Self::InvalidConfig(message) => match language {
+                UiLanguage::English => {
+                    format!("Invalid API configuration: {}", english_api_detail(message))
+                }
+                UiLanguage::ChineseSimplified => format!("API 配置无效：{message}"),
+            },
             Self::Http {
                 status: 401,
                 message,
-            } => write!(formatter, "API 认证失败（401）：{message}"),
-            Self::Http { status, message } => write!(formatter, "API 返回错误 {status}：{message}"),
-            Self::Network(message) => formatter.write_str(network_error_message(message)),
-            Self::InvalidResponse(message) => write!(formatter, "API 响应格式错误：{message}"),
-            Self::EmptyResult => formatter.write_str("API 返回了空结果"),
+            } => match language {
+                UiLanguage::English => format!(
+                    "API authentication failed (401): {}",
+                    english_provider_detail(message)
+                ),
+                UiLanguage::ChineseSimplified => format!("API 认证失败（401）：{message}"),
+            },
+            Self::Http { status, message } => match language {
+                UiLanguage::English => format!(
+                    "API returned HTTP {status}: {}",
+                    english_provider_detail(message)
+                ),
+                UiLanguage::ChineseSimplified => format!("API 返回错误 {status}：{message}"),
+            },
+            Self::Network(message) => network_error_message(language, message).into(),
+            Self::InvalidResponse(message) => match language {
+                UiLanguage::English => {
+                    format!("Invalid API response: {}", english_api_detail(message))
+                }
+                UiLanguage::ChineseSimplified => format!("API 响应格式错误：{message}"),
+            },
+            Self::EmptyResult => match language {
+                UiLanguage::English => "The API returned an empty result".into(),
+                UiLanguage::ChineseSimplified => "API 返回了空结果".into(),
+            },
         }
     }
+}
+
+fn english_api_detail(message: &str) -> &str {
+    match message {
+        "当前配置不存在" => "The active API profile does not exist",
+        "缺少 choices[0]" => "choices[0] is missing",
+        _ => message,
+    }
+}
+
+fn english_provider_detail(message: &str) -> String {
+    message.replace("[API Key 已隐藏]", "[API key redacted]")
 }
 
 impl std::error::Error for ApiError {}
@@ -420,17 +463,28 @@ fn sanitize(message: &str) -> String {
     truncate(message, 200)
 }
 
-fn network_error_message(message: &str) -> &'static str {
+fn network_error_message(language: UiLanguage, message: &str) -> &'static str {
     let normalized = message.to_ascii_lowercase();
     if normalized.contains("timeout") || normalized.contains("timed out") {
-        "请求超时，请稍后重试"
+        match language {
+            UiLanguage::English => "The request timed out. Try again later.",
+            UiLanguage::ChineseSimplified => "请求超时，请稍后重试",
+        }
     } else if normalized.contains("tls")
         || normalized.contains("certificate")
         || normalized.contains("cert chain")
     {
-        "TLS 证书验证失败，请检查系统证书或网络代理"
+        match language {
+            UiLanguage::English => {
+                "TLS certificate verification failed. Check system certificates or the network proxy."
+            }
+            UiLanguage::ChineseSimplified => "TLS 证书验证失败，请检查系统证书或网络代理",
+        }
     } else {
-        "网络连接失败，请检查网络"
+        match language {
+            UiLanguage::English => "Network connection failed. Check the network connection.",
+            UiLanguage::ChineseSimplified => "网络连接失败，请检查网络",
+        }
     }
 }
 
@@ -705,6 +759,27 @@ mod tests {
         assert_eq!(
             ApiError::Network("Timeout(Global)".into()).to_string(),
             "请求超时，请稍后重试"
+        );
+        assert_eq!(
+            ApiError::Network("Timeout(Global)".into()).localized_message(UiLanguage::English),
+            "The request timed out. Try again later."
+        );
+        assert_eq!(
+            ApiError::InvalidConfig("当前配置不存在".into()).localized_message(UiLanguage::English),
+            "Invalid API configuration: The active API profile does not exist"
+        );
+        assert_eq!(
+            ApiError::InvalidResponse("缺少 choices[0]".into())
+                .localized_message(UiLanguage::English),
+            "Invalid API response: choices[0] is missing"
+        );
+        assert_eq!(
+            ApiError::Http {
+                status: 401,
+                message: "credential [API Key 已隐藏] is invalid".into(),
+            }
+            .localized_message(UiLanguage::English),
+            "API authentication failed (401): credential [API key redacted] is invalid"
         );
     }
 

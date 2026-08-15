@@ -152,7 +152,9 @@ fn stage_active_profile(
         temperature,
         max_tokens,
     };
-    profile.validate().map_err(|error| error.to_string())?;
+    profile
+        .validate()
+        .map_err(|error| error.localized_message(language))?;
     if profiles.iter().enumerate().any(|(index, item)| {
         index != active_index && item.name.trim().eq_ignore_ascii_case(profile.name.trim())
     }) {
@@ -232,7 +234,9 @@ fn config_from_form(
 
     config.play_sound = form.play_sound;
     config.auto_start = form.auto_start;
-    config.validate().map_err(|error| error.to_string())?;
+    config
+        .validate()
+        .map_err(|error| error.localized_message(current.ui_language))?;
     Ok(config)
 }
 

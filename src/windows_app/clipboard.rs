@@ -1,10 +1,12 @@
 use std::thread;
 use std::time::{Duration, Instant};
 use windows::core::{Error, HRESULT};
-use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
+use windows::Win32::Foundation::{
+    GetLastError, GlobalFree, SetLastError, HANDLE, HGLOBAL, WIN32_ERROR,
+};
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData,
-    GetClipboardSequenceNumber, OpenClipboard, SetClipboardData,
+    GetClipboardSequenceNumber, IsClipboardFormatAvailable, OpenClipboard, SetClipboardData,
 };
 use windows::Win32::System::Memory::{
     GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE,
@@ -37,6 +39,21 @@ struct ClipboardFormatData {
 
 struct ClipboardSnapshot {
     formats: Vec<ClipboardFormatData>,
+}
+
+struct PreparedClipboardFormat {
+    format: u32,
+    memory: Option<HGLOBAL>,
+}
+
+impl Drop for PreparedClipboardFormat {
+    fn drop(&mut self) {
+        if let Some(memory) = self.memory.take() {
+            unsafe {
+                let _ = GlobalFree(Some(memory));
+            }
+        }
+    }
 }
 
 impl Drop for ClipboardGuard {
@@ -109,8 +126,12 @@ fn snapshot_clipboard() -> Result<ClipboardSnapshot, Error> {
     let mut formats = Vec::new();
     let mut format = 0;
     loop {
+        unsafe {
+            SetLastError(WIN32_ERROR(0));
+        }
         format = unsafe { EnumClipboardFormats(format) };
         if format == 0 {
+            check_clipboard_enumeration_end(unsafe { GetLastError() })?;
             break;
         }
         if !can_snapshot_as_hglobal(format) {
@@ -125,11 +146,33 @@ fn snapshot_clipboard() -> Result<ClipboardSnapshot, Error> {
     Ok(ClipboardSnapshot { formats })
 }
 
+fn check_clipboard_enumeration_end(error: WIN32_ERROR) -> Result<(), Error> {
+    if error.0 != 0 {
+        error.ok()?;
+    }
+    Ok(())
+}
+
 fn restore_clipboard(snapshot: ClipboardSnapshot) -> Result<(), Error> {
+    let mut prepared = snapshot
+        .formats
+        .into_iter()
+        .map(|data| {
+            allocate_clipboard_bytes(&data.bytes).map(|memory| PreparedClipboardFormat {
+                format: data.format,
+                memory: Some(memory),
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
     let _guard = open_with_retry()?;
     unsafe { EmptyClipboard()? };
-    for data in snapshot.formats {
-        set_clipboard_bytes(data.format, &data.bytes)?;
+    for data in &mut prepared {
+        let memory = data.memory.take().ok_or_else(Error::from_thread)?;
+        if let Err(error) = unsafe { SetClipboardData(data.format, Some(HANDLE(memory.0))) } {
+            data.memory = Some(memory);
+            return Err(error);
+        }
     }
     Ok(())
 }
@@ -171,7 +214,7 @@ fn copy_hglobal_bytes(memory: HGLOBAL, format: u32) -> Result<Vec<u8>, Error> {
     Ok(bytes)
 }
 
-fn set_clipboard_bytes(format: u32, bytes: &[u8]) -> Result<(), Error> {
+fn allocate_clipboard_bytes(bytes: &[u8]) -> Result<HGLOBAL, Error> {
     let memory = unsafe { GlobalAlloc(GMEM_MOVEABLE, bytes.len().max(1)) }?;
     let pointer = unsafe { GlobalLock(memory) };
     if pointer.is_null() {
@@ -188,13 +231,7 @@ fn set_clipboard_bytes(format: u32, bytes: &[u8]) -> Result<(), Error> {
     unsafe {
         let _ = GlobalUnlock(memory);
     }
-    if let Err(error) = unsafe { SetClipboardData(format, Some(HANDLE(memory.0))) } {
-        unsafe {
-            let _ = GlobalFree(Some(memory));
-        }
-        return Err(error);
-    }
-    Ok(())
+    Ok(memory)
 }
 
 fn copy_selection_and_read() -> Result<Option<String>, Error> {
@@ -202,14 +239,18 @@ fn copy_selection_and_read() -> Result<Option<String>, Error> {
     send_ctrl_c()?;
 
     let started = Instant::now();
-    while unsafe { GetClipboardSequenceNumber() } == previous_sequence {
+    loop {
+        let sequence_changed = unsafe { GetClipboardSequenceNumber() } != previous_sequence;
+        if sequence_changed && unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT_VALUE) }.is_ok() {
+            if let Some(text) = read_text()? {
+                return Ok(Some(text));
+            }
+        }
         if started.elapsed() >= COPY_TIMEOUT {
             return Ok(None);
         }
         thread::sleep(Duration::from_millis(10));
     }
-
-    read_text()
 }
 
 fn read_text() -> Result<Option<String>, Error> {
@@ -338,6 +379,12 @@ mod tests {
             assert!(!can_snapshot_as_hglobal(format));
         }
         assert!(can_snapshot_as_hglobal(CF_UNICODETEXT_VALUE));
+    }
+
+    #[test]
+    fn clipboard_enumeration_distinguishes_end_of_data_from_failure() {
+        assert!(check_clipboard_enumeration_end(WIN32_ERROR(0)).is_ok());
+        assert!(check_clipboard_enumeration_end(WIN32_ERROR(5)).is_err());
     }
 
     #[test]

@@ -1,9 +1,14 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt::{Display, Formatter};
-use std::fs;
-use std::io;
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
+use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use windows::core::PCWSTR;
+use windows::Win32::Storage::FileSystem::{
+    MoveFileExW, ReplaceFileW, MOVEFILE_WRITE_THROUGH, REPLACEFILE_WRITE_THROUGH,
+};
 
 const MAX_API_PROFILES: usize = 20;
 pub const DEFAULT_API_PROFILE_NAME: &str = "默认配置";
@@ -284,16 +289,157 @@ pub enum ConfigError {
 
 impl Display for ConfigError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.localized_message(UiLanguage::ChineseSimplified))
+    }
+}
+
+impl ConfigError {
+    pub fn localized_message(&self, language: UiLanguage) -> String {
         match self {
-            Self::Io(error) => write!(formatter, "配置文件读写失败：{error}"),
-            Self::Invalid(message) => write!(formatter, "配置无效：{message}"),
-            Self::InvalidJson { source, backup } => write!(
-                formatter,
-                "配置文件格式损坏（已备份到 {}）：{source}",
-                backup.display()
-            ),
+            Self::Io(error) => match language {
+                UiLanguage::English => {
+                    format!("Failed to read or write the configuration: {error}")
+                }
+                UiLanguage::ChineseSimplified => format!("配置文件读写失败：{error}"),
+            },
+            Self::Invalid(message) => match language {
+                UiLanguage::English => {
+                    format!("Invalid configuration: {}", english_config_detail(message))
+                }
+                UiLanguage::ChineseSimplified => format!("配置无效：{message}"),
+            },
+            Self::InvalidJson { source, backup } => match language {
+                UiLanguage::English => format!(
+                    "The configuration file is damaged and was backed up to {}: {source}",
+                    backup.display()
+                ),
+                UiLanguage::ChineseSimplified => format!(
+                    "配置文件格式损坏（已备份到 {}）：{source}",
+                    backup.display()
+                ),
+            },
         }
     }
+}
+
+fn english_config_detail(message: &str) -> String {
+    let exact = match message {
+        "result_mode 仅支持 clipboard" => Some("result_mode currently supports only clipboard"),
+        "至少需要一个 API 配置" => Some("At least one API profile is required"),
+        "API 配置最多保存 20 个" => Some("At most 20 API profiles can be saved"),
+        "自定义动作最多保存 20 个" => Some("At most 20 actions can be saved"),
+        "动作 ID 不能为空" => Some("Action ID cannot be empty"),
+        "动作名称不能为空" => Some("Action name cannot be empty"),
+        "API 配置名称不能为空" => Some("API profile name cannot be empty"),
+        "API 配置名称不能超过 40 个字符或包含控制字符" => {
+            Some("API profile names cannot exceed 40 characters or contain control characters")
+        }
+        "至少需要配置一个模型" => Some("At least one model is required"),
+        "每个 API 配置最多保存 50 个模型" => {
+            Some("Each API profile can contain at most 50 models")
+        }
+        "模型名称不能为空" => Some("Model name cannot be empty"),
+        "模型名称不能超过 200 个字符或包含控制字符" => {
+            Some("Model names cannot exceed 200 characters or contain control characters")
+        }
+        "base_url 必须以 http:// 或 https:// 开头" => {
+            Some("base_url must start with http:// or https://")
+        }
+        "base_url 缺少主机地址" => Some("base_url is missing a host name"),
+        "model 不能为空" => Some("model cannot be empty"),
+        "temperature 必须位于 0.0 到 2.0 之间" => {
+            Some("temperature must be between 0.0 and 2.0")
+        }
+        "max_tokens 必须大于 0" => Some("max_tokens must be greater than zero"),
+        "母语 不能为空" => Some("Native language cannot be empty"),
+        "目标翻译语言 不能为空" => Some("Target language cannot be empty"),
+        "母语 不能超过 40 个字符或包含控制字符" => {
+            Some("Native language cannot exceed 40 characters or contain control characters")
+        }
+        "目标翻译语言 不能超过 40 个字符或包含控制字符" => {
+            Some("Target language cannot exceed 40 characters or contain control characters")
+        }
+        _ => None,
+    };
+    if let Some(detail) = exact {
+        return detail.into();
+    }
+
+    for (prefix, english) in [
+        (
+            "API 配置最多保存 ",
+            "At most this many API profiles can be saved: ",
+        ),
+        ("API 配置名称重复：", "Duplicate API profile name: "),
+        (
+            "当前 API 配置不存在：",
+            "The active API profile does not exist: ",
+        ),
+        ("动作 ID 重复：", "Duplicate action ID: "),
+        ("动作名称重复：", "Duplicate action name: "),
+        ("模型名称重复：", "Duplicate model name: "),
+        (
+            "当前模型不在可用模型列表中：",
+            "The selected model is not in the model list: ",
+        ),
+        (
+            "翻译模型不在可用模型列表中：",
+            "The translation model is not in the model list: ",
+        ),
+        ("JSON 格式错误：", "Invalid JSON: "),
+        (
+            "无法序列化默认配置：",
+            "Failed to serialize the default configuration: ",
+        ),
+    ] {
+        if let Some(value) = message.strip_prefix(prefix) {
+            return format!("{english}{value}");
+        }
+    }
+
+    if let Some(rest) = message.strip_prefix("动作「") {
+        if let Some((name, detail)) = rest.split_once("」快捷键无效：") {
+            return format!(
+                "Action \"{name}\" has an invalid shortcut: {}",
+                english_hotkey_detail(detail)
+            );
+        }
+        if rest.contains("快捷键冲突") {
+            return "Enabled action shortcuts conflict. Choose unique shortcuts.".into();
+        }
+    }
+
+    english_hotkey_detail(message)
+}
+
+fn english_hotkey_detail(message: &str) -> String {
+    let exact = match message {
+        "热键不能为空" => Some("Shortcut cannot be empty"),
+        "热键只能包含一个主键" => Some("A shortcut can contain only one main key"),
+        "热键至少需要一个修饰键" => Some("A shortcut requires at least one modifier"),
+        "热键缺少主键" => Some("The shortcut is missing its main key"),
+        "F12 是系统调试器保留键" => Some("F12 is reserved by the system debugger"),
+        "快捷键不能相同" => Some("Shortcuts cannot be identical"),
+        "同一按键不能重复设置相同次数的多击手势" => {
+            Some("The same key cannot use the same multi-press count twice")
+        }
+        "Ctrl 组合键与 Ctrl 多击手势不能使用相同的按键" => {
+            Some("A Ctrl shortcut and Ctrl multi-press gesture cannot share the same key")
+        }
+        _ => None,
+    };
+    if let Some(detail) = exact {
+        return detail.into();
+    }
+    for (prefix, english) in [
+        ("热键包含重复按键：", "Duplicate key in shortcut: "),
+        ("不支持的主键：", "Unsupported main key: "),
+    ] {
+        if let Some(value) = message.strip_prefix(prefix) {
+            return format!("{english}{value}");
+        }
+    }
+    "Configuration validation failed. Review profiles, models, actions, and shortcuts.".into()
 }
 
 impl std::error::Error for ConfigError {}
@@ -778,16 +924,66 @@ pub fn save(path: &Path, config: &Config) -> Result<(), ConfigError> {
 }
 
 fn write_atomic(path: &Path, config: &Config) -> Result<(), ConfigError> {
+    write_atomic_with(path, config, replace_config_file)
+}
+
+fn write_atomic_with<Replace>(
+    path: &Path,
+    config: &Config,
+    replace: Replace,
+) -> Result<(), ConfigError>
+where
+    Replace: FnOnce(&Path, &Path) -> io::Result<()>,
+{
     let temp_path = path.with_extension("json.tmp");
     let mut contents = serde_json::to_string_pretty(config)
         .map_err(|error| ConfigError::Invalid(format!("无法序列化默认配置：{error}")))?;
     contents.push('\n');
-    fs::write(&temp_path, contents.as_bytes())?;
-    if path.exists() {
-        fs::remove_file(path)?;
+    let mut temp_file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&temp_path)?;
+    temp_file.write_all(contents.as_bytes())?;
+    temp_file.sync_all()?;
+    drop(temp_file);
+
+    if let Err(error) = replace(&temp_path, path) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(error.into());
     }
-    fs::rename(temp_path, path)?;
     Ok(())
+}
+
+fn replace_config_file(temp_path: &Path, destination: &Path) -> io::Result<()> {
+    let temp_wide = wide_path(temp_path);
+    let destination_wide = wide_path(destination);
+    let result = unsafe {
+        if destination.exists() {
+            ReplaceFileW(
+                PCWSTR(destination_wide.as_ptr()),
+                PCWSTR(temp_wide.as_ptr()),
+                PCWSTR::null(),
+                REPLACEFILE_WRITE_THROUGH,
+                None,
+                None,
+            )
+        } else {
+            MoveFileExW(
+                PCWSTR(temp_wide.as_ptr()),
+                PCWSTR(destination_wide.as_ptr()),
+                MOVEFILE_WRITE_THROUGH,
+            )
+        }
+    };
+    result.map_err(|error| io::Error::other(error.to_string()))
+}
+
+fn wide_path(path: &Path) -> Vec<u16> {
+    path.as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
 }
 
 fn invalid_backup_path(path: &Path) -> PathBuf {
@@ -863,6 +1059,21 @@ mod tests {
         config.active_api_mut().unwrap().max_tokens = 1;
         config.result_mode = "popup".into();
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validation_errors_are_localized_for_english_ui() {
+        let mut config = Config::default();
+        config.active_api_mut().unwrap().max_tokens = 0;
+        let error = config.validate().unwrap_err();
+
+        assert_eq!(
+            error.localized_message(UiLanguage::English),
+            "Invalid configuration: max_tokens must be greater than zero"
+        );
+        assert!(error
+            .localized_message(UiLanguage::ChineseSimplified)
+            .contains("max_tokens 必须大于 0"));
     }
 
     #[test]
@@ -1095,6 +1306,29 @@ mod tests {
         invalid.active_api_mut().unwrap().max_tokens = 0;
         assert!(save(&path, &invalid).is_err());
         assert_eq!(load_existing(&path).unwrap(), updated);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn atomic_replace_failure_preserves_the_previous_config() {
+        let path = temp_path("replace-failure");
+        let original = Config::default();
+        save(&path, &original).unwrap();
+        let original_bytes = fs::read(&path).unwrap();
+
+        let mut updated = original.clone();
+        updated.play_sound = false;
+        let result = write_atomic_with(&path, &updated, |_, _| {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "simulated atomic replacement failure",
+            ))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(fs::read(&path).unwrap(), original_bytes);
+        assert!(!path.with_extension("json.tmp").exists());
 
         let _ = fs::remove_file(path);
     }

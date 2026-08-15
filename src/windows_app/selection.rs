@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
 use std::sync::Mutex;
+use text_pilot::config::UiLanguage;
 use windows::core::Error as WindowsError;
 use windows::Win32::Foundation::RECT;
 use windows::Win32::System::Com::{
@@ -45,10 +46,31 @@ pub enum SelectionError {
 
 impl Display for SelectionError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.localized_message(UiLanguage::ChineseSimplified))
+    }
+}
+
+impl SelectionError {
+    pub fn localized_message(&self, language: UiLanguage) -> String {
         match self {
-            Self::Unsupported => formatter.write_str("当前应用不支持直接读取选中文本"),
-            Self::Windows(error) => write!(formatter, "Windows UI Automation 错误：{error}"),
-            Self::Compatibility(error) => write!(formatter, "兼容模式读取选区失败：{error}"),
+            Self::Unsupported => match language {
+                UiLanguage::English => {
+                    "The active application does not expose the selected text".into()
+                }
+                UiLanguage::ChineseSimplified => "当前应用不支持直接读取选中文本".into(),
+            },
+            Self::Windows(error) => match language {
+                UiLanguage::English => format!("Windows UI Automation failed: {error}"),
+                UiLanguage::ChineseSimplified => {
+                    format!("Windows UI Automation 错误：{error}")
+                }
+            },
+            Self::Compatibility(error) => match language {
+                UiLanguage::English => {
+                    format!("Clipboard compatibility selection failed: {error}")
+                }
+                UiLanguage::ChineseSimplified => format!("兼容模式读取选区失败：{error}"),
+            },
         }
     }
 }
@@ -160,6 +182,18 @@ mod tests {
     fn rejects_empty_or_whitespace_only_selection() {
         assert_eq!(combine_selected_ranges(vec![]), None);
         assert_eq!(combine_selected_ranges(vec!["  \r\n".into()]), None);
+    }
+
+    #[test]
+    fn selection_errors_follow_the_interface_language() {
+        assert_eq!(
+            SelectionError::Unsupported.localized_message(UiLanguage::English),
+            "The active application does not expose the selected text"
+        );
+        assert_eq!(
+            SelectionError::Unsupported.localized_message(UiLanguage::ChineseSimplified),
+            "当前应用不支持直接读取选中文本"
+        );
     }
 
     #[test]
