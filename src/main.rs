@@ -12,5 +12,5 @@ fn main() {
 
 #[cfg(not(windows))]
 fn main() {
-    eprintln!("PromptOptimizer only supports Windows.");
+    eprintln!("TextPilot only supports Windows.");
 }

@@ -1,10 +1,10 @@
-# PromptOptimizer 详细规格说明书（v1.0）
+# TextPilot 详细规格说明书（v1.0）
 
 > [!NOTE]
 > 本文档为项目立项时的**初始开发规范（v1.0）**，仅作为最初设计的历史背景参考。具体实现的最新行为（如 Windows UI Automation 选区、`Ctrl+DoubleF8` 优化手势、`Ctrl+DoubleF9` 翻译手势、WebView2 界面及原生 Win32 接口实现）请以代码、测试及主 [README.md](../README.md) 为准。文档尾部第 14 节提供了从初始设计到当前版本（v0.5.0）的实际功能演进对照。
 
 ## 1. 项目概述
-**项目名称**：PromptOptimizer
+**项目名称**：TextPilot
 **类型**：Windows 绿色单文件工具
 **定位**：通过全局热键，将用户选中的文本（或剪贴板内容）发送给大模型 API，返回优化后的提示词，并自动写回剪贴板。
 **核心价值**：让用户在任何软件中，选中一段提示词后按一个快捷键，即可获得更好的提示词，过程几乎无感知。
@@ -30,7 +30,7 @@
 - 不支持本地大模型
 - 不做历史记录、对话管理
 - 不做复杂 GUI 主窗口
-- 不做多语言切换（仅中文）
+- 不做多语言切换（仅中文；此为初始 v1.0 历史约束，当前设置界面和站点的语言支持以主 README 为准）
 - 不做自动更新
 - 不做插件系统
 - 不做流式输出（可后期考虑）
@@ -149,7 +149,7 @@
 ---
 ## 7. 用户操作流程
 ### 首次使用
-1. 解压/拷贝 `PromptOptimizer.exe`
+1. 解压/拷贝 `TextPilot.exe`
 2. 双击运行 → 自动生成 `config.json`
 3. 托盘图标出现 → 右键「设置」→ 填写 API Key 并保存
 4. 开始使用
@@ -198,8 +198,8 @@ strip = true
 ---
 ## 11. 文件与目录结构（最终交付）
 ```
-PromptOptimizer/
-├── PromptOptimizer.exe # 主程序
+TextPilot/
+├── TextPilot.exe # 主程序
 ├── config.json # 配置文件（首次运行自动生成）
 └── README.txt # 简单说明（可选）
 ```
@@ -207,7 +207,7 @@ PromptOptimizer/
 ## 12. 构建与发布要求
 - 使用 `cargo build --release`
 - 目标平台：`x86_64-pc-windows-msvc`
-- 最终只发布 `PromptOptimizer.exe`
+- 最终只发布 `TextPilot.exe`
 - 建议附带一份极简 README，说明：
   - 如何填写 API Key
   - 默认热键

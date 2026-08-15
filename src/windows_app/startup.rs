@@ -6,7 +6,9 @@ use windows::Win32::System::Registry::{
     KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ,
 };
 
-const VALUE_NAME: PCWSTR = w!("PromptOptimizer");
+const VALUE_NAME: PCWSTR = w!("TextPilot");
+// Removed on every update so upgrades do not leave the pre-v0.5 startup entry behind.
+const LEGACY_VALUE_NAME: PCWSTR = w!("PromptOptimizer");
 
 pub fn set_auto_start(enabled: bool, exe_path: &Path) -> Result<(), Error> {
     let mut key = HKEY::default();
@@ -35,16 +37,22 @@ pub fn set_auto_start(enabled: bool, exe_path: &Path) -> Result<(), Error> {
         };
         unsafe { RegSetValueExW(key, VALUE_NAME, None, REG_SZ, Some(bytes)).ok() }
     } else {
-        let code = unsafe { RegDeleteValueW(key, VALUE_NAME) };
-        if code == ERROR_FILE_NOT_FOUND {
-            Ok(())
-        } else {
-            code.ok()
-        }
+        delete_value_if_present(key, VALUE_NAME)
     };
+
+    let result = result.and_then(|_| delete_value_if_present(key, LEGACY_VALUE_NAME));
 
     unsafe {
         let _ = RegCloseKey(key);
     }
     result
+}
+
+fn delete_value_if_present(key: HKEY, name: PCWSTR) -> Result<(), Error> {
+    let code = unsafe { RegDeleteValueW(key, name) };
+    if code == ERROR_FILE_NOT_FOUND {
+        Ok(())
+    } else {
+        code.ok()
+    }
 }

@@ -1,5 +1,5 @@
 /target/
-dist/PromptOptimizer.exe
+dist/TextPilot.exe
 
 # 禁止上传 dist 中的任何子文件夹，允许上传压缩包 (.zip, .7z, .tar.gz 等)
 dist/*/

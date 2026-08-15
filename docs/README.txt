@@ -1,81 +1,22 @@
-PromptOptimizer v0.5.0
-====================
+TextPilot v0.5.0
+================
 
-PromptOptimizer 是一个仅支持 Windows 的绿色提示词优化与文本智能翻译工具。程序没有主窗口，运行后驻留在系统托盘。
+English
+-------
+TextPilot is a portable Windows AI text assistant that runs in the system tray without a main window. It requires Windows 10 or 11; Settings requires Microsoft Edge WebView2 Runtime.
 
-系统要求
+1. Put TextPilot.exe in a directory writable by your user account and run it. It creates config.json beside the EXE.
+2. Right-click the tray icon and choose Settings. Configure an OpenAI-compatible API endpoint, API key, models, actions, and behavior, then choose Save & Apply.
+3. Select text in an application. Hold Ctrl and press F8 twice to optimize a prompt, or F9 twice to translate intelligently. Results are copied to the clipboard; paste with Ctrl+V.
+
+TextPilot reads selections through Windows UI Automation first. If necessary, it temporarily uses and restores the clipboard. config.json stores API keys in plaintext locally; do not share it. Actions can use Standard (Double) and Deep (Triple) gestures, dedicated models, and custom prompts. Use the tray menu to open Settings, reload externally edited configuration, or exit.
+
+简体中文
 --------
-- Windows 10 或 Windows 11。
-- 设置窗口依赖 Microsoft Edge WebView2 Runtime；多数 Windows 10/11 系统已预装。
+TextPilot 是一个绿色 Windows AI 文本助手，没有主窗口，运行后驻留在系统托盘。需要 Windows 10 或 Windows 11；设置窗口依赖 Microsoft Edge WebView2 Runtime。
 
-首次使用
---------
-1. 将 PromptOptimizer.exe 放到普通用户可写目录。
-2. 双击运行，程序会在 EXE 同目录生成 config.json。
-3. 右键托盘图标，选择“设置”。
-4. 在“模型与服务”“动作与规则”“应用行为”中修改配置。
-5. 可先测试当前动作的 API 连接，再点击“保存并应用”。
+1. 将 TextPilot.exe 放入当前用户可写目录并运行，程序会在 EXE 同目录创建 config.json。
+2. 右键托盘图标，选择“设置”。配置 OpenAI 兼容的 API 地址、API Key、模型、动作和应用行为，然后点击“保存并应用”。
+3. 在应用中选中文字。按住 Ctrl 连按两次 F8 优化提示词，或连按两次 F9 智能翻译。结果自动复制到剪贴板，按 Ctrl+V 粘贴。
 
-模型配置
---------
-- 每套 API 配置可以保存多个模型。
-- 在“可用模型”中每行填写一个模型名称。
-- 使用“全局主模型”选择普通动作的回退模型；使用“翻译默认模型”为翻译动作指定独立回退模型。
-- 每个动作可以指定专属模型；若当前 API 配置不包含该模型，会回退到主模型（翻译动作回退到翻译默认模型）。
-- 在“动作与规则”中可以新增、编辑、禁用动作，并配置标准/深度提示词。
-- 切换 API 配置时，各配置的模型列表、全局主模型和翻译默认模型分别保存。
-- 旧版仅包含部分字段的 config.json 会在加载时自动迁移。
-
-日常使用
---------
-1. 在应用中选中待处理文本；UI Automation 失败时程序会自动使用剪贴板兼容模式。
-2. 提示词优化：按住 Ctrl，快速连续按两次 F8（间隔不超过约 0.52 秒）。
-3. 文本智能翻译：按住 Ctrl，快速连续按两次 F9。若选文为主语种（默认中文）则译为目标语言（默认英语）；若为任何外文非母语则译回母语。
-4. 等待状态提示变为“已复制”。
-5. 按 Ctrl+V 粘贴处理结果。
-
-v0.5.0 更新
------------
-- 新增可配置动作列表，可为每个动作设置名称、启用状态、快捷键、专属模型和系统提示词。
-- 支持双击 Standard 与三击 Deep 分级手势；同一按键可分别绑定 Double 和 Triple 动作。
-- 新增默认禁用的“代码重构与解释”动作，并支持创建更多自定义动作。
-- 设置中心升级为“模型与服务 / 动作与规则 / 应用行为”三页，模型参数改为整齐的两行布局。
-- 动作专属模型在当前 API Profile 不可用时会安全回退，并保留原覆盖值供其他 Profile 使用。
-- 热键注册失败时完整回滚，避免残留全局热键；完善配置迁移、动作 ID 规范化和回归测试。
-
-v0.4.0 更新
------------
-- 新增智能文本翻译功能（默认快捷键 Ctrl+DoubleF9），自动判断语言方向，在母语与目标翻译语言之间进行精准且地道的双向翻译。
-- 每套 API Profile 支持独立指定用于翻译的模型（translation_model），可在设置中针对“优化”和“翻译”分别配置更合适的模型。
-- 优化规则设置支持自定义母语（native_language）、目标翻译语言（target_language）及专属翻译系统提示词（translation_prompt）。
-- 严格的热键校验与防冲突检查，确保优化快捷键和翻译快捷键不会出现冲突配置。
-- 两组多击热键按实际触发顺序回放；切换手势键或被其他按键打断时，不会按固定配置顺序重排普通快捷键。
-- 状态浮窗优先定位在本次 UI Automation 选区附近；无法取得可靠选区矩形时回退到鼠标位置。
-- UI Automation 接口存在但返回空选区时也会进入剪贴板兼容模式，修复 AntiGravity IDE 中误报“未检测到选中文本”的问题。
-- 增强了 HTTP 客户端请求异常及超时管理，提升非标准或慢响应大模型服务连接稳定性。
-
-v0.3.0 更新
------------
-- 设置窗口升级为 WebView2 渲染的 Apple / Win11 风格界面，支持系统深浅配色。
-- 每套 API 配置支持多个模型，并可选择当前调用模型。
-- 新增自绘配置下拉框、胶囊 Toggle、键盘焦点态、高对比度和窄窗口布局。
-- 切换配置前自动暂存当前表单，测试连接不会覆盖未保存输入。
-- 测试连接直接使用当前表单中的模型、温度和最大 Token 数，兼容 SenseNova 等需要较多输出 Token 的模型。
-- 温度和最大 Token 数使用严格校验，并正确支持 temperature = 0。
-- WebView2 初始化失败时显示明确错误；关闭设置窗口后尽力清理本次临时数据目录。
-- Toast 浮窗支持 DPI 缩放。
-- UI Automation 无法读取选区时，自动临时复制选区并恢复原剪贴板。
-- 默认快捷键改为 Ctrl+DoubleF8；旧版 Ctrl+TripleA 和 Ctrl+DoubleA 会自动迁移。
-- 修复兼容模式恢复剪贴板时可能触发 ole32.dll 异常并导致程序退出的问题；单次读取或后台任务异常后可继续使用快捷键。
-
-注意事项
---------
-- config.json 中的 API Key 以明文保存在本机，请勿提交或分享该文件。
-- 程序只向配置的 API 服务发送当前选区、系统提示词和请求参数。
-- 输入侧优先不访问剪贴板；兼容模式会深拷贝可安全恢复的数据、模拟 Ctrl+C 读取选区并立即恢复。剪贴板被占用或包含无法安全备份的格式时，本次读取会失败并提示，但程序不会退出。
-- 剪贴板历史工具可能记录兼容模式的临时复制；部分游戏、远程桌面及禁止复制的自绘控件仍可能无法读取选区。
-- 设置窗口中的修改需点击“保存并应用”才会写入 config.json 并生效。
-
-退出
-----
-右键托盘图标，选择“退出”。
+程序优先通过 Windows UI Automation 读取选区；必要时会临时使用并恢复剪贴板。config.json 会在本地明文保存 API Key，请勿分享。动作支持 Double 标准模式和 Triple 深度模式、专属模型及自定义提示词。托盘菜单可打开设置、重新加载外部修改的配置或退出程序。

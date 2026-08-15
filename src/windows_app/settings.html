@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PromptOptimizer 设置</title>
+  <title>TextPilot 设置</title>
   <style>
     :root {
       --bg-main: #F3F4F6;
@@ -675,17 +675,17 @@
   <!-- 侧边栏导航 -->
   <div class="sidebar">
     <div class="brand">
-      <div class="brand-title">PromptOptimizer</div>
-      <div class="brand-subtitle">本地设置中心</div>
+      <div class="brand-title">TextPilot</div>
+      <div class="brand-subtitle" data-i18n="brand.subtitle">本地设置中心</div>
     </div>
     <div class="nav-list">
-      <button type="button" class="nav-item active" data-target="page-service" onclick="switchPage('page-service')">
+      <button type="button" class="nav-item active" data-target="page-service" data-i18n="nav.service" onclick="switchPage('page-service')">
         模型与服务
       </button>
-      <button type="button" class="nav-item" data-target="page-actions" onclick="switchPage('page-actions')">
+      <button type="button" class="nav-item" data-target="page-actions" data-i18n="nav.actions" onclick="switchPage('page-actions')">
         动作与规则
       </button>
-      <button type="button" class="nav-item" data-target="page-behavior" onclick="switchPage('page-behavior')">
+      <button type="button" class="nav-item" data-target="page-behavior" data-i18n="nav.behavior" onclick="switchPage('page-behavior')">
         应用行为
       </button>
     </div>
@@ -694,10 +694,10 @@
   <!-- 主内容区 -->
   <div class="main-container">
     <div class="header">
-      <div class="header-title" id="page-title">模型与服务</div>
+      <div class="header-title" id="page-title" data-i18n="nav.service">模型与服务</div>
       <div id="profile-actions" style="display: flex; gap: 8px;">
-        <button class="btn btn-secondary btn-sm" onclick="sendAction('profile_new')">+ 新建配置</button>
-        <button class="btn btn-secondary btn-sm" onclick="sendAction('profile_delete')">🗑 删除配置</button>
+        <button class="btn btn-secondary btn-sm" data-i18n="profile.new" onclick="sendAction('profile_new')">+ 新建配置</button>
+        <button class="btn btn-secondary btn-sm" data-i18n="profile.delete" onclick="sendAction('profile_delete')">🗑 删除配置</button>
       </div>
     </div>
 
@@ -708,7 +708,7 @@
         <!-- 1. 顶部动作插槽选择栏 -->
         <div class="card" style="padding: 14px 20px;">
           <div class="card-title" style="margin-bottom: 8px;">
-            <span>选择动作以配置专属模型 (Action Slots)</span>
+            <span data-i18n="service.slots">选择动作以配置专属模型 (Action Slots)</span>
           </div>
           <div class="action-chips-container" id="service-action-chips-list"></div>
         </div>
@@ -716,39 +716,39 @@
         <!-- 2. 当前选中动作的模型分配与测试卡片 -->
         <div class="card" id="service-action-config-card">
           <div class="card-title">
-            <span>动作模型设定 - <span id="svc-current-action-name-title" style="color: var(--accent);">提示词优化</span></span>
+            <span><span data-i18n="service.actionSettings">动作模型设定</span> - <span id="svc-current-action-name-title" style="color: var(--accent);">提示词优化</span></span>
             <span id="svc-current-action-hotkey-badge" style="font-size: 11.5px; color: var(--text-muted); font-weight: normal;"></span>
           </div>
 
           <div class="form-row">
             <div class="form-col" style="flex: 2;">
-              <label class="form-label" for="svc_action_model">该动作调用模型</label>
+              <label class="form-label" for="svc_action_model" data-i18n="service.actionModel">该动作调用模型</label>
               <select id="svc_action_model" onchange="onServiceActionModelChange()"></select>
-              <div class="form-sublabel" id="svc_action_model_tip">当前实际生效：继承全局主模型</div>
+              <div class="form-sublabel" id="svc_action_model_tip" data-i18n="service.effectiveInherited">当前实际生效：继承全局主模型</div>
             </div>
             <div class="form-col" style="flex: 1;">
-              <label class="form-label">连通性测试</label>
-              <button type="button" class="btn btn-outline-accent" id="btn-test-action-api" style="width: 100%;" onclick="testCurrentActionApi()">
+              <label class="form-label" data-i18n="service.connectivity">连通性测试</label>
+              <button type="button" class="btn btn-outline-accent" id="btn-test-action-api" style="width: 100%;" data-i18n="service.testAction" onclick="testCurrentActionApi()">
                 🚀 测试此动作连接
               </button>
-              <div class="form-sublabel">实时测试该动作实际调用的模型</div>
+              <div class="form-sublabel" data-i18n="service.testHelp">实时测试该动作实际调用的模型</div>
             </div>
           </div>
         </div>
 
         <!-- 3. API 基础服务与模型列表 -->
         <div class="card">
-          <div class="card-title">API 基础服务与模型列表</div>
+          <div class="card-title" data-i18n="service.apiModels">API 基础服务与模型列表</div>
           <div class="form-row">
             <div class="form-col">
-              <label class="form-label">当前服务配置</label>
+              <label class="form-label" data-i18n="service.currentProfile">当前服务配置</label>
               <div class="custom-select-container">
-                <button type="button" class="select-trigger" id="select-profile-trigger" aria-haspopup="listbox" aria-expanded="false" onclick="toggleSelectOptions()">选择配置</button>
+                <button type="button" class="select-trigger" id="select-profile-trigger" aria-haspopup="listbox" aria-expanded="false" data-i18n="profile.select" onclick="toggleSelectOptions()">选择配置</button>
                 <div class="select-options" id="select-profile-options" role="listbox"></div>
               </div>
             </div>
             <div class="form-col">
-              <label class="form-label" for="profile_name">配置名称</label>
+              <label class="form-label" for="profile_name" data-i18n="service.profileName">配置名称</label>
               <input type="text" id="profile_name" placeholder="例如：硅基流动" oninput="markDirty()">
             </div>
           </div>
@@ -758,43 +758,43 @@
               <label class="form-label" for="api_key">
                 <span>API Key</span>
                 <span style="display: inline-flex; align-items: center; gap: 4px; font-weight: normal; font-size: 11.5px; color: var(--text-muted); cursor: pointer;" onclick="toggleKeyVisibilityManual()">
-                  <input type="checkbox" id="show_key" style="cursor: pointer;" onchange="toggleKeyVisibility()"> 显示 Key
+                  <input type="checkbox" id="show_key" style="cursor: pointer;" onchange="toggleKeyVisibility()"> <span data-i18n="service.showKey">显示 Key</span>
                 </span>
               </label>
               <input type="password" id="api_key" placeholder="sk-..." oninput="markDirty()">
             </div>
             <div class="form-col">
-              <label class="form-label" for="base_url">服务地址 (Base URL)</label>
+              <label class="form-label" for="base_url" data-i18n="service.baseUrl">服务地址 (Base URL)</label>
               <input type="text" id="base_url" placeholder="https://api.openai.com/v1" oninput="markDirty()">
             </div>
           </div>
 
           <div class="form-col">
-            <label class="form-label" for="models">可用模型列表 (每行一个)</label>
+            <label class="form-label" for="models" data-i18n="service.models">可用模型列表 (每行一个)</label>
             <textarea class="model-list-editor" id="models" placeholder="gpt-4o-mini&#10;gpt-4o&#10;claude-3-5-sonnet" oninput="syncModelOptionsFromEditor(); markDirty()"></textarea>
-            <div class="form-sublabel">每行填写一个模型名称。上方动作模型下拉框将自动使用此处维护的模型列表。</div>
+            <div class="form-sublabel" data-i18n="service.modelsHelp">每行填写一个模型名称。上方动作模型下拉框将自动使用此处维护的模型列表。</div>
           </div>
 
           <div class="form-row">
             <div class="form-col">
-              <label class="form-label" for="model">全局主模型 (Default Model)</label>
+              <label class="form-label" for="model" data-i18n="service.defaultModel">全局主模型 (Default Model)</label>
               <select id="model" onchange="onGlobalModelChange()"></select>
-              <div class="form-sublabel">未单独指定模型的动作将默认继承此主模型</div>
+              <div class="form-sublabel" data-i18n="service.defaultModelHelp">未单独指定模型的动作将默认继承此主模型</div>
             </div>
             <div class="form-col">
-              <label class="form-label" for="translation_model">翻译默认模型</label>
+              <label class="form-label" for="translation_model" data-i18n="service.translationModel">翻译默认模型</label>
               <select id="translation_model" onchange="markDirty()"></select>
-              <div class="form-sublabel">翻译动作未指定专用模型时使用</div>
+              <div class="form-sublabel" data-i18n="service.translationModelHelp">翻译动作未指定专用模型时使用</div>
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-col">
-              <label class="form-label" for="temperature">温度 (Temperature)</label>
+              <label class="form-label" for="temperature" data-i18n="service.temperature">温度 (Temperature)</label>
               <input type="text" id="temperature" placeholder="0.3" oninput="markDirty()">
             </div>
             <div class="form-col">
-              <label class="form-label" for="max_tokens">最大 Token 数</label>
+              <label class="form-label" for="max_tokens" data-i18n="service.maxTokens">最大 Token 数</label>
               <input type="text" id="max_tokens" placeholder="512" oninput="markDirty()">
             </div>
           </div>
@@ -806,8 +806,8 @@
         <!-- 动作选择标签条 -->
         <div class="card" style="padding: 14px 20px;">
           <div class="card-title" style="margin-bottom: 8px;">
-            <span>动作插槽 (Custom Action Slots)</span>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="addNewAction()">+ 新建动作</button>
+            <span data-i18n="actions.slots">动作插槽 (Custom Action Slots)</span>
+            <button type="button" class="btn btn-secondary btn-sm" data-i18n="actions.new" onclick="addNewAction()">+ 新建动作</button>
           </div>
           <div class="action-chips-container" id="action-chips-list"></div>
         </div>
@@ -815,75 +815,75 @@
         <!-- 当前选中动作的详情编辑卡片 -->
         <div class="card" id="action-editor-card">
           <div class="card-title">
-            <span id="editor-action-title">动作详细设定</span>
-            <button type="button" class="btn btn-danger btn-sm" id="btn-delete-action" style="display: none;" onclick="deleteCurrentAction()">🗑 删除此动作</button>
+            <span id="editor-action-title" data-i18n="actions.details">动作详细设定</span>
+            <button type="button" class="btn btn-danger btn-sm" id="btn-delete-action" style="display: none;" data-i18n="actions.delete" onclick="deleteCurrentAction()">🗑 删除此动作</button>
           </div>
 
           <div class="form-row">
             <div class="form-col">
-              <label class="form-label" for="act_name">动作名称</label>
+              <label class="form-label" for="act_name" data-i18n="actions.name">动作名称</label>
               <input type="text" id="act_name" placeholder="例如：代码重构与解释" oninput="onCurrentActionFieldChange()">
             </div>
             <div class="form-col">
-              <label class="form-label" for="act_hotkey">触发快捷键</label>
+              <label class="form-label" for="act_hotkey" data-i18n="actions.hotkey">触发快捷键</label>
               <input type="text" id="act_hotkey" placeholder="例如：Ctrl+DoubleF7 或 Alt+Shift+C" oninput="onCurrentActionFieldChange()">
-              <div class="form-sublabel">支持 Ctrl+Double/Triple(F1~F24/A~Z) 或普通组合键</div>
+              <div class="form-sublabel" data-i18n="actions.hotkeyHelp">支持 Ctrl+Double/Triple(F1~F24/A~Z) 或普通组合键</div>
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-col">
-              <label class="form-label" for="act_model">绑定专用模型</label>
+              <label class="form-label" for="act_model" data-i18n="actions.model">绑定专用模型</label>
               <select id="act_model" onchange="onActionModelFieldChange()"></select>
-              <div class="form-sublabel">默认继承当前 API 配置的主模型</div>
+              <div class="form-sublabel" data-i18n="actions.modelHelp">默认继承当前 API 配置的主模型</div>
             </div>
             <div class="form-col">
-              <label class="form-label">动作状态</label>
+              <label class="form-label" data-i18n="actions.status">动作状态</label>
               <div class="switch-card">
-                <span class="form-label" style="margin: 0; font-size: 13px; font-weight: 500;">启用此动作监听</span>
+                <span class="form-label" style="margin: 0; font-size: 13px; font-weight: 500;" data-i18n="actions.enable">启用此动作监听</span>
                 <label class="switch">
                   <input type="checkbox" id="act_enabled" onchange="onCurrentActionFieldChange()">
                   <span class="slider"></span>
                 </label>
               </div>
-              <div class="form-sublabel">禁用后将注销其系统全局热键</div>
+              <div class="form-sublabel" data-i18n="actions.enableHelp">禁用后将注销其系统全局热键</div>
             </div>
           </div>
 
           <!-- 翻译专用语种设置（仅在 translate 动作时显示） -->
           <div id="translate-lang-row" class="form-row" style="display: none;">
             <div class="form-col">
-              <label class="form-label" for="native_language">母语 (Native Language)</label>
+              <label class="form-label" for="native_language" data-i18n="actions.nativeLanguage">母语 (Native Language)</label>
               <input type="text" id="native_language" placeholder="中文" oninput="markDirty()">
-              <div class="form-sublabel">非母语文本自动翻译回该母语</div>
+              <div class="form-sublabel" data-i18n="actions.nativeHelp">非母语文本自动翻译回该母语</div>
             </div>
             <div class="form-col">
-              <label class="form-label" for="target_language">目标翻译语言 (Target Language)</label>
+              <label class="form-label" for="target_language" data-i18n="actions.targetLanguage">目标翻译语言 (Target Language)</label>
               <input type="text" id="target_language" placeholder="英语" oninput="markDirty()">
-              <div class="form-sublabel">母语文本自动译往的目标语言</div>
+              <div class="form-sublabel" data-i18n="actions.targetHelp">母语文本自动译往的目标语言</div>
             </div>
           </div>
 
           <!-- 标准模式提示词 -->
           <div class="form-col">
-            <label class="form-label" for="act_system_prompt">标准模式提示词 (双击 / 默认触发)</label>
+            <label class="form-label" for="act_system_prompt" data-i18n="actions.standardPrompt">标准模式提示词 (双击 / 默认触发)</label>
             <textarea id="act_system_prompt" placeholder="你是一个优秀的提示词优化助手..." oninput="onCurrentActionFieldChange()"></textarea>
-            <div class="form-sublabel">快捷键触发（双击/标准模式）时向 AI 发送的基本设定指令。支持 <code>{native}</code> 与 <code>{target}</code> 变量。</div>
+            <div class="form-sublabel" data-i18n="actions.standardHelp">快捷键触发（双击/标准模式）时向 AI 发送的基本设定指令。支持 {native} 与 {target} 变量。</div>
           </div>
 
           <!-- 深度模式提示词（三击分级） -->
           <div class="form-col">
-            <label class="form-label" for="act_triple_prompt">✨ 深度模式提示词 (三击手势触发 / 可选)</label>
+            <label class="form-label" for="act_triple_prompt" data-i18n="actions.deepPrompt">✨ 深度模式提示词 (三击手势触发 / 可选)</label>
             <textarea id="act_triple_prompt" placeholder="（可选）配置后，按住 Ctrl 连按 3 次快捷键将自动触发此深度处理模式..." style="min-height: 90px;" oninput="onCurrentActionFieldChange()"></textarea>
-            <div class="form-sublabel"><b>分级增强：</b>若配置此项，使用多击手势连按 3 次将自动升级为此深度提示词；若留空则双击与三击均使用标准模式。</div>
+            <div class="form-sublabel" data-i18n="actions.deepHelp">分级增强：若配置此项，使用多击手势连按 3 次将自动升级为此深度提示词；若留空则双击与三击均使用标准模式。</div>
           </div>
         </div>
 
         <div class="card" id="translate-info-card" style="display: none;">
-          <div class="card-title">文本翻译智能判断与双向分级说明</div>
+          <div class="card-title" data-i18n="translate.title">文本翻译智能判断与双向分级说明</div>
           <div class="info-banner">
-            <div class="info-banner-title">ℹ 智能翻译双向判断与三击双语对照说明</div>
-            <div>
+            <div class="info-banner-title" data-i18n="translate.bannerTitle">ℹ 智能翻译双向判断与三击双语对照说明</div>
+            <div data-i18n-html="translate.info">
               • <b>智能互译：</b>无需手动选择源语言，AI 自动判定。母语准确译为目标语言，外语准确译回母语。<br>
               • <b>双击 vs 三击分级：</b>双击为纯文本极速直译；三击为【原文 + 译文】双语结构化对照输出。<br>
               • <b>占位符自动注入：</b>Prompt 中使用 <code>{native}</code> 与 <code>{target}</code> 会在发送前自动渲染为具体语种。
@@ -895,26 +895,35 @@
       <!-- 页面 3：应用行为 -->
       <div class="page-section" id="page-behavior">
         <div class="card">
-          <div class="card-title">系统与声音行为</div>
+          <div class="card-title" data-i18n="behavior.systemSound">系统与声音行为</div>
+
+          <div class="form-col">
+            <label class="form-label" for="ui_language" data-i18n="behavior.interfaceLanguage">界面语言</label>
+            <select id="ui_language" aria-label="界面语言" data-i18n-aria-label="behavior.interfaceLanguage" onchange="onLocaleChange(this.value)">
+              <option value="zh-CN" data-i18n="language.zhCN">简体中文</option>
+              <option value="en" data-i18n="language.en">English</option>
+            </select>
+            <div class="form-sublabel" data-i18n="behavior.interfaceLanguageHelp">仅更改设置窗口的显示语言。</div>
+          </div>
 
           <div class="switch-row" style="padding-top: 8px;">
             <div>
-              <div class="form-label">完成后播放提示音</div>
-              <div class="form-sublabel">任务处理完成并写入剪贴板时播放轻柔音频通知</div>
+              <div class="form-label" data-i18n="behavior.playSound">完成后播放提示音</div>
+              <div class="form-sublabel" data-i18n="behavior.playSoundHelp">任务处理完成并写入剪贴板时播放轻柔音频通知</div>
             </div>
             <label class="switch">
-              <input type="checkbox" id="play_sound" aria-label="完成后播放提示音" onchange="markDirty()">
+              <input type="checkbox" id="play_sound" aria-label="完成后播放提示音" data-i18n-aria-label="behavior.playSound" onchange="markDirty()">
               <span class="slider"></span>
             </label>
           </div>
 
           <div class="switch-row" style="padding-top: 8px;">
             <div>
-              <div class="form-label">登录 Windows 后自动启动</div>
-              <div class="form-sublabel">随操作系统自启并在后台托盘静默运行</div>
+              <div class="form-label" data-i18n="behavior.autoStart">登录 Windows 后自动启动</div>
+              <div class="form-sublabel" data-i18n="behavior.autoStartHelp">随操作系统自启并在后台托盘静默运行</div>
             </div>
             <label class="switch">
-              <input type="checkbox" id="auto_start" aria-label="登录 Windows 后自动启动" onchange="markDirty()">
+              <input type="checkbox" id="auto_start" aria-label="登录 Windows 后自动启动" data-i18n-aria-label="behavior.autoStart" onchange="markDirty()">
               <span class="slider"></span>
             </label>
           </div>
@@ -927,8 +936,8 @@
     <div class="footer-bar">
       <div class="status-badge" id="status-text" role="status" aria-live="polite">所有修改统一点击“保存并应用”</div>
       <div style="display: flex; gap: 10px;">
-        <button class="btn btn-secondary" onclick="sendAction('reset')">重置更改</button>
-        <button class="btn btn-primary" onclick="sendAction('save')">保存并应用</button>
+        <button class="btn btn-secondary" data-i18n="footer.reset" onclick="sendAction('reset')">重置更改</button>
+        <button class="btn btn-primary" data-i18n="footer.save" onclick="sendAction('save')">保存并应用</button>
       </div>
     </div>
   </div>
@@ -938,6 +947,78 @@
     let profilesList = [];
     let actionsList = [];
     let currentActionId = 'optimize';
+    let currentLocale = 'zh-CN';
+
+    const translations = {
+      'zh-CN': {
+        'title': 'TextPilot 设置', 'brand.subtitle': '本地设置中心',
+        'nav.service': '模型与服务', 'nav.actions': '动作与规则', 'nav.behavior': '应用行为',
+        'profile.new': '+ 新建配置', 'profile.delete': '🗑 删除配置', 'profile.select': '选择配置',
+        'service.slots': '选择动作以配置专属模型 (Action Slots)', 'service.actionSettings': '动作模型设定', 'service.actionModel': '该动作调用模型',
+        'service.effectiveInherited': '当前实际生效：继承全局主模型', 'service.connectivity': '连通性测试', 'service.testAction': '🚀 测试此动作连接', 'service.testing': '测试中…', 'service.testHelp': '实时测试该动作实际调用的模型',
+        'service.apiModels': 'API 基础服务与模型列表', 'service.currentProfile': '当前服务配置', 'service.profileName': '配置名称', 'service.showKey': '显示 Key', 'service.baseUrl': '服务地址 (Base URL)',
+        'service.models': '可用模型列表 (每行一个)', 'service.modelsHelp': '每行填写一个模型名称。上方动作模型下拉框将自动使用此处维护的模型列表。',
+        'service.defaultModel': '全局主模型 (Default Model)', 'service.defaultModelHelp': '未单独指定模型的动作将默认继承此主模型', 'service.translationModel': '翻译默认模型', 'service.translationModelHelp': '翻译动作未指定专用模型时使用',
+        'service.temperature': '温度 (Temperature)', 'service.maxTokens': '最大 Token 数',
+        'actions.slots': '动作插槽 (Custom Action Slots)', 'actions.new': '+ 新建动作', 'actions.details': '动作详细设定', 'actions.delete': '🗑 删除此动作',
+        'actions.name': '动作名称', 'actions.hotkey': '触发快捷键', 'actions.hotkeyHelp': '支持 Ctrl+Double/Triple(F1~F24/A~Z) 或普通组合键', 'actions.model': '绑定专用模型', 'actions.modelHelp': '默认继承当前 API 配置的主模型',
+        'actions.status': '动作状态', 'actions.enable': '启用此动作监听', 'actions.enableHelp': '禁用后将注销其系统全局热键',
+        'actions.nativeLanguage': '母语 (Native Language)', 'actions.nativeHelp': '非母语文本自动翻译回该母语', 'actions.targetLanguage': '目标翻译语言 (Target Language)', 'actions.targetHelp': '母语文本自动译往的目标语言',
+        'actions.standardPrompt': '标准模式提示词 (双击 / 默认触发)', 'actions.standardHelp': '快捷键触发（双击/标准模式）时向 AI 发送的基本设定指令。支持 {native} 与 {target} 变量。',
+        'actions.deepPrompt': '✨ 深度模式提示词 (三击手势触发 / 可选)', 'actions.deepHelp': '分级增强：若配置此项，使用多击手势连按 3 次将自动升级为此深度提示词；若留空则双击与三击均使用标准模式。',
+        'translate.title': '文本翻译智能判断与双向分级说明', 'translate.bannerTitle': 'ℹ 智能翻译双向判断与三击双语对照说明',
+        'translate.info': '• <b>智能互译：</b>无需手动选择源语言，AI 自动判定。母语准确译为目标语言，外语准确译回母语。<br>• <b>双击 vs 三击分级：</b>双击为纯文本极速直译；三击为【原文 + 译文】双语结构化对照输出。<br>• <b>占位符自动注入：</b>Prompt 中使用 <code>{native}</code> 与 <code>{target}</code> 会在发送前自动渲染为具体语种。',
+        'behavior.systemSound': '系统与声音行为', 'behavior.interfaceLanguage': '界面语言', 'behavior.interfaceLanguageHelp': '更改应用设置、托盘菜单和状态提示的显示语言。', 'language.zhCN': '简体中文', 'language.en': 'English',
+        'behavior.playSound': '完成后播放提示音', 'behavior.playSoundHelp': '任务处理完成并写入剪贴板时播放轻柔音频通知', 'behavior.autoStart': '登录 Windows 后自动启动', 'behavior.autoStartHelp': '随操作系统自启并在后台托盘静默运行',
+        'footer.ready': '所有修改统一点击“保存并应用”', 'footer.dirty': '配置已修改（未保存）', 'footer.reset': '重置更改', 'footer.save': '保存并应用',
+        'model.inheritGlobal': '继承全局主模型 (默认)', 'model.inheritProfile': '继承当前配置主模型', 'model.unavailable': '（当前配置不可用，将回退）', 'model.inheritBadge': '继承主模型',
+        'dynamic.hotkey': '触发快捷键：{hotkey}', 'dynamic.unset': '未设置', 'dynamic.unselected': '未选择', 'dynamic.specificModel': '当前实际生效：指定专有模型 ({model})', 'dynamic.fallback': '指定模型不可用，将回退：{model}', 'dynamic.inheritedModel': '当前实际生效：继承主模型 ({model})', 'dynamic.actionSettings': '动作设定 - {name}', 'dynamic.newAction': '新动作 {index}', 'dynamic.newActionPrompt': '请处理选中文本数据，仅返回处理结果。',
+        'placeholder.profileName': '例如：硅基流动', 'placeholder.baseUrl': 'https://api.openai.com/v1', 'placeholder.models': 'gpt-4o-mini\ngpt-4o\nclaude-3-5-sonnet', 'placeholder.actionName': '例如：代码重构与解释', 'placeholder.hotkey': '例如：Ctrl+DoubleF7 或 Alt+Shift+C', 'placeholder.native': '中文', 'placeholder.target': '英语', 'placeholder.standardPrompt': '你是一个优秀的提示词优化助手...', 'placeholder.deepPrompt': '（可选）配置后，按住 Ctrl 连按 3 次快捷键将自动触发此深度处理模式...'
+      },
+      en: {
+        'title': 'TextPilot Settings', 'brand.subtitle': 'Local Settings Center', 'nav.service': 'Models & Services', 'nav.actions': 'Actions & Rules', 'nav.behavior': 'App Behavior', 'profile.new': '+ New Profile', 'profile.delete': '🗑 Delete Profile', 'profile.select': 'Select profile',
+        'service.slots': 'Select an action to configure its model (Action Slots)', 'service.actionSettings': 'Action Model Settings', 'service.actionModel': 'Model for this action', 'service.effectiveInherited': 'Currently active: inherits global default model', 'service.connectivity': 'Connection test', 'service.testAction': '🚀 Test this action connection', 'service.testing': 'Testing…', 'service.testHelp': 'Test the model this action actually uses', 'service.apiModels': 'API Service & Model List', 'service.currentProfile': 'Current service profile', 'service.profileName': 'Profile name', 'service.showKey': 'Show key', 'service.baseUrl': 'Service URL (Base URL)', 'service.models': 'Available models (one per line)', 'service.modelsHelp': 'Enter one model name per line. The action model lists above use this list automatically.', 'service.defaultModel': 'Global default model', 'service.defaultModelHelp': 'Actions without a dedicated model inherit this model.', 'service.translationModel': 'Default translation model', 'service.translationModelHelp': 'Used when the translation action has no dedicated model.', 'service.temperature': 'Temperature', 'service.maxTokens': 'Maximum tokens',
+        'actions.slots': 'Action Slots', 'actions.new': '+ New Action', 'actions.details': 'Action Details', 'actions.delete': '🗑 Delete This Action', 'actions.name': 'Action name', 'actions.hotkey': 'Shortcut', 'actions.hotkeyHelp': 'Supports Ctrl+Double/Triple(F1–F24/A–Z) or standard shortcuts.', 'actions.model': 'Dedicated model', 'actions.modelHelp': 'Inherits the current API profile default model by default.', 'actions.status': 'Action status', 'actions.enable': 'Enable this action listener', 'actions.enableHelp': 'Disabling it unregisters its system-wide hotkey.', 'actions.nativeLanguage': 'Native language', 'actions.nativeHelp': 'Non-native text is translated back into this language.', 'actions.targetLanguage': 'Translation target language', 'actions.targetHelp': 'Native-language text is translated into this language.', 'actions.standardPrompt': 'Standard-mode prompt (double press / default)', 'actions.standardHelp': 'The base instruction sent to AI in standard mode. Supports {native} and {target} variables.', 'actions.deepPrompt': '✨ Deep-mode prompt (triple press / optional)', 'actions.deepHelp': 'Enhanced tier: when configured, three presses use this deep prompt; otherwise both double and triple presses use the standard prompt.', 'translate.title': 'Smart Translation and Two-way Tiering', 'translate.bannerTitle': 'ℹ Smart two-way translation and triple-press bilingual comparison', 'translate.info': '• <b>Smart translation:</b> No source language selection is needed. AI detects it automatically, translating native text to the target language and foreign text back to the native language.<br>• <b>Double vs. triple press:</b> Double press produces a fast plain-text translation; triple press produces a structured original + translation comparison.<br>• <b>Automatic placeholders:</b> <code>{native}</code> and <code>{target}</code> in prompts are rendered as the selected languages before sending.', 'behavior.systemSound': 'System & Sound Behavior', 'behavior.interfaceLanguage': 'Interface language', 'behavior.interfaceLanguageHelp': 'Changes the display language for Settings, the tray menu, and status messages.', 'language.zhCN': 'Simplified Chinese', 'language.en': 'English', 'behavior.playSound': 'Play a completion sound', 'behavior.playSoundHelp': 'Play a subtle notification after a task completes and is copied to the clipboard.', 'behavior.autoStart': 'Start automatically after Windows sign-in', 'behavior.autoStartHelp': 'Launch with Windows and run silently in the system tray.', 'footer.ready': 'Click “Save & Apply” to apply all changes.', 'footer.dirty': 'Configuration changed (unsaved)', 'footer.reset': 'Reset changes', 'footer.save': 'Save & Apply', 'model.inheritGlobal': 'Inherit global default model', 'model.inheritProfile': 'Inherit current profile default model', 'model.unavailable': ' (unavailable in current profile; will fall back)', 'model.inheritBadge': 'Inherit default model', 'dynamic.hotkey': 'Shortcut: {hotkey}', 'dynamic.unset': 'Not set', 'dynamic.unselected': 'Not selected', 'dynamic.specificModel': 'Currently active: dedicated model ({model})', 'dynamic.fallback': 'Dedicated model unavailable; falling back to: {model}', 'dynamic.inheritedModel': 'Currently active: inherited default model ({model})', 'dynamic.actionSettings': 'Action Settings - {name}', 'dynamic.newAction': 'New Action {index}', 'dynamic.newActionPrompt': 'Process the selected text and return only the result.', 'placeholder.profileName': 'Example: SiliconFlow', 'placeholder.baseUrl': 'https://api.openai.com/v1', 'placeholder.models': 'gpt-4o-mini\ngpt-4o\nclaude-3-5-sonnet', 'placeholder.actionName': 'Example: Refactor and explain code', 'placeholder.hotkey': 'Example: Ctrl+DoubleF7 or Alt+Shift+C', 'placeholder.native': 'Chinese', 'placeholder.target': 'English', 'placeholder.standardPrompt': 'You are an excellent prompt optimization assistant...', 'placeholder.deepPrompt': '(Optional) When configured, hold Ctrl and press the shortcut three times to trigger this deep processing mode...'
+      }
+    };
+
+    function canonicalLocale(locale) {
+      return String(locale || '').toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
+    }
+
+    function t(key, values = {}) {
+      let text = (translations[currentLocale] && translations[currentLocale][key]) || translations['zh-CN'][key] || key;
+      return text.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? `{${name}}`);
+    }
+
+    function localizeStaticText() {
+      const placeholders = { profile_name: 'placeholder.profileName', base_url: 'placeholder.baseUrl', models: 'placeholder.models', act_name: 'placeholder.actionName', act_hotkey: 'placeholder.hotkey', native_language: 'placeholder.native', target_language: 'placeholder.target', act_system_prompt: 'placeholder.standardPrompt', act_triple_prompt: 'placeholder.deepPrompt' };
+      Object.entries(placeholders).forEach(([id, key]) => { const el = document.getElementById(id); if (el) el.placeholder = t(key); });
+      document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+      document.querySelectorAll('[data-i18n-html]').forEach(el => { el.innerHTML = t(el.dataset.i18nHtml); });
+      document.querySelectorAll('[data-i18n-aria-label]').forEach(el => el.setAttribute('aria-label', t(el.dataset.i18nAriaLabel)));
+    }
+
+    window.setLocale = function(locale) {
+      currentLocale = canonicalLocale(locale);
+      document.documentElement.lang = currentLocale;
+      document.title = t('title');
+      const selector = document.getElementById('ui_language');
+      if (selector) selector.value = currentLocale;
+      localizeStaticText();
+      switchPage(document.querySelector('.page-section.active')?.id || 'page-service');
+      renderActionsChips();
+      renderServiceActionChips();
+      const status = document.getElementById('status-text');
+      if (status && !status.dataset.externalStatus) status.innerText = isDirty ? t('footer.dirty') : t('footer.ready');
+    };
+
+    function onLocaleChange(locale) {
+      const language = canonicalLocale(locale);
+      window.setLocale(language);
+      if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage({ action: 'set_language', language });
+      else console.log('PostMessage mock:', { action: 'set_language', language });
+    }
 
     function switchPage(pageId) {
       document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
@@ -950,11 +1031,11 @@
       if (activeSec) activeSec.classList.add('active');
 
       const titleMap = {
-        'page-service': '模型与服务',
-        'page-actions': '动作与规则',
-        'page-behavior': '应用行为'
+        'page-service': t('nav.service'),
+        'page-actions': t('nav.actions'),
+        'page-behavior': t('nav.behavior')
       };
-      document.getElementById('page-title').innerText = titleMap[pageId] || '设置';
+      document.getElementById('page-title').innerText = titleMap[pageId] || t('title');
       document.getElementById('profile-actions').style.display = pageId === 'page-service' ? 'flex' : 'none';
 
       if (pageId === 'page-service') {
@@ -1037,7 +1118,7 @@
       // 1.「模型与服务」中的动作专属模型下拉框
       const svcSelect = document.getElementById('svc_action_model');
       if (svcSelect) {
-        svcSelect.innerHTML = '<option value="">继承全局主模型 (默认)</option>';
+        svcSelect.innerHTML = `<option value="">${t('model.inheritGlobal')}</option>`;
         models.forEach(m => {
           const opt = document.createElement('option');
           opt.value = m;
@@ -1049,7 +1130,7 @@
         if (curAction && curAction.model && !selectedActionModel) {
           const unavailable = document.createElement('option');
           unavailable.value = curAction.model;
-          unavailable.innerText = `${curAction.model}（当前配置不可用，将回退）`;
+          unavailable.innerText = `${curAction.model}${t('model.unavailable')}`;
           svcSelect.appendChild(unavailable);
         }
         svcSelect.value = selectedActionModel || ((curAction && curAction.model) ? curAction.model : '');
@@ -1058,7 +1139,7 @@
       // 2.「动作与规则」中的动作专用模型下拉框
       const actSelect = document.getElementById('act_model');
       if (actSelect) {
-        actSelect.innerHTML = '<option value="">继承当前配置主模型</option>';
+        actSelect.innerHTML = `<option value="">${t('model.inheritProfile')}</option>`;
         models.forEach(m => {
           const opt = document.createElement('option');
           opt.value = m;
@@ -1070,7 +1151,7 @@
         if (curAction && curAction.model && !selectedActionModel) {
           const unavailable = document.createElement('option');
           unavailable.value = curAction.model;
-          unavailable.innerText = `${curAction.model}（当前配置不可用，将回退）`;
+          unavailable.innerText = `${curAction.model}${t('model.unavailable')}`;
           actSelect.appendChild(unavailable);
         }
         actSelect.value = selectedActionModel || ((curAction && curAction.model) ? curAction.model : '');
@@ -1119,7 +1200,7 @@
 
         const modelBadge = document.createElement('span');
         modelBadge.className = 'action-badge';
-        modelBadge.innerText = action.model ? action.model : '继承主模型';
+        modelBadge.innerText = action.model ? action.model : t('model.inheritBadge');
         chip.appendChild(modelBadge);
 
         chip.onclick = () => selectAction(action.id);
@@ -1135,7 +1216,7 @@
       currentActionId = action.id;
 
       document.getElementById('svc-current-action-name-title').innerText = action.name;
-      document.getElementById('svc-current-action-hotkey-badge').innerText = `触发快捷键：${action.hotkey || '未设置'}`;
+      document.getElementById('svc-current-action-hotkey-badge').innerText = t('dynamic.hotkey', { hotkey: action.hotkey || t('dynamic.unset') });
 
       const svcSelect = document.getElementById('svc_action_model');
       if (svcSelect) {
@@ -1148,18 +1229,18 @@
     function updateServiceActionTip() {
       const tip = document.getElementById('svc_action_model_tip');
       if (!tip) return;
-      const globalModel = document.getElementById('model').value || '未选择';
+      const globalModel = document.getElementById('model').value || t('dynamic.unselected');
       const models = normalizeModelNames(document.getElementById('models').value.split(/\r?\n/));
       const action = actionsList.find(a => a.id === currentActionId);
       const availableModel = action && matchingModel(models, action.model);
       if (action && action.model && availableModel) {
-        tip.innerText = `当前实际生效：指定专有模型 (${availableModel})`;
+        tip.innerText = t('dynamic.specificModel', { model: availableModel });
       } else if (action && action.model) {
         const translationModel = document.getElementById('translation_model').value || globalModel;
         const fallbackModel = String(action.id).toLowerCase() === 'translate' ? translationModel : globalModel;
-        tip.innerText = `指定模型不可用，将回退：${fallbackModel}`;
+        tip.innerText = t('dynamic.fallback', { model: fallbackModel });
       } else {
-        tip.innerText = `当前实际生效：继承主模型 (${globalModel})`;
+        tip.innerText = t('dynamic.inheritedModel', { model: globalModel });
       }
     }
 
@@ -1235,7 +1316,7 @@
       if (!action) return;
       currentActionId = action.id;
 
-      document.getElementById('editor-action-title').innerText = `动作设定 - ${action.name}`;
+      document.getElementById('editor-action-title').innerText = t('dynamic.actionSettings', { name: action.name });
       document.getElementById('act_name').value = action.name || '';
       document.getElementById('act_hotkey').value = action.hotkey || '';
       document.getElementById('act_enabled').checked = action.enabled !== false;
@@ -1261,7 +1342,15 @@
       action.system_prompt = document.getElementById('act_system_prompt').value;
       action.triple_prompt = document.getElementById('act_triple_prompt').value;
 
-      renderActionsChips();
+      const editorTitle = document.getElementById('editor-action-title');
+      if (editorTitle) editorTitle.innerText = t('dynamic.actionSettings', { name: action.name });
+      const actionChip = Array.from(document.querySelectorAll('#action-chips-list .action-chip'))
+        .find(chip => chip.getAttribute('aria-pressed') === 'true');
+      if (actionChip) {
+        const name = actionChip.querySelector('span:nth-child(2)');
+        if (name) name.innerText = action.name;
+        actionChip.classList.toggle('disabled', !action.enabled);
+      }
       renderServiceActionChips();
       markDirty();
     }
@@ -1286,10 +1375,10 @@
       const hotkey = nextAvailableActionHotkey();
       const newAction = {
         id: newId,
-        name: `新动作 ${newIndex}`,
+        name: t('dynamic.newAction', { index: newIndex }),
         hotkey,
         model: '',
-        system_prompt: '请处理选中文本数据，仅返回处理结果。',
+        system_prompt: t('dynamic.newActionPrompt'),
         triple_prompt: '',
         enabled: Boolean(hotkey)
       };
@@ -1339,8 +1428,10 @@
 
     function markDirty() {
       isDirty = true;
-      document.getElementById('status-text').className = 'status-badge';
-      document.getElementById('status-text').innerText = '配置已修改（未保存）';
+      const status = document.getElementById('status-text');
+      status.className = 'status-badge';
+      status.innerText = t('footer.dirty');
+      delete status.dataset.externalStatus;
     }
 
     function sendAction(action, extra = {}) {
@@ -1396,7 +1487,7 @@
           item.onclick = () => selectProfile(p.name);
           optionsContainer.appendChild(item);
         });
-        document.getElementById('select-profile-trigger').innerText = data.active_profile || '选择配置';
+        document.getElementById('select-profile-trigger').innerText = data.active_profile || t('profile.select');
       }
 
       if (data.current_profile) {
@@ -1421,6 +1512,7 @@
 
     window.updateConfig = function(data) {
       isDirty = false;
+      if (data.ui_language !== undefined) window.setLocale(data.ui_language);
       applyProfileState(data);
 
       if (data.actions && Array.isArray(data.actions)) {
@@ -1449,7 +1541,7 @@
     window.updateProfileState = function(data) {
       isDirty = true;
       applyProfileState(data);
-      window.updateStatus(data.status || '配置已修改（未保存）', false, false, false);
+      window.updateStatus(data.status || t('footer.dirty'), false, false, false);
     };
 
     window.updateStatus = function(status, isError, isSuccess, isTesting) {
@@ -1457,11 +1549,12 @@
       badge.innerText = status;
       badge.title = status;
       badge.className = 'status-badge ' + (isError ? 'error' : (isSuccess ? 'success' : ''));
+      badge.dataset.externalStatus = 'true';
 
       const testBtn = document.getElementById('btn-test-action-api');
       if (testBtn) {
         testBtn.disabled = Boolean(isTesting);
-        testBtn.innerText = isTesting ? '测试中…' : '🚀 测试此动作连接';
+        testBtn.innerText = isTesting ? t('service.testing') : t('service.testAction');
       }
     };
 

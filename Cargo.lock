@@ -481,17 +481,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "prompt_optimizer"
-version = "0.5.0"
-dependencies = [
- "serde",
- "serde_json",
- "ureq",
- "webview2-com",
- "windows",
-]
-
-[[package]]
 name = "quote"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -665,6 +654,17 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys",
+]
+
+[[package]]
+name = "text-pilot"
+version = "0.5.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ureq",
+ "webview2-com",
+ "windows",
 ]
 
 [[package]]

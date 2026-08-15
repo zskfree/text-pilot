@@ -1,6 +1,7 @@
-use prompt_optimizer::config::{ApiProfile, Config};
 use serde::Deserialize;
 use std::ffi::c_void;
+use text_pilot::config::{ApiProfile, Config, UiLanguage};
+use text_pilot::i18n::{self, Message};
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     CreateCoreWebView2EnvironmentWithOptions, ICoreWebView2, ICoreWebView2Controller,
 };
@@ -18,9 +19,9 @@ use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW, IsWindow,
     LoadCursorW, MessageBoxW, PostMessageW, RegisterClassW, SendMessageW, SetForegroundWindow,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, CREATESTRUCTW, CW_USEDEFAULT, GWLP_USERDATA,
-    HICON, ICON_BIG, ICON_SMALL, IDC_ARROW, MB_ICONERROR, MB_OK, MINMAXINFO, SWP_NOACTIVATE,
-    SWP_NOZORDER, SW_SHOW, WM_APP, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DPICHANGED,
+    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, CREATESTRUCTW, CW_USEDEFAULT,
+    GWLP_USERDATA, HICON, ICON_BIG, ICON_SMALL, IDC_ARROW, MB_ICONERROR, MB_OK, MINMAXINFO,
+    SWP_NOACTIVATE, SWP_NOZORDER, SW_SHOW, WM_APP, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DPICHANGED,
     WM_GETMINMAXINFO, WM_NCCREATE, WM_SETICON, WM_SIZE, WNDCLASSW, WS_CAPTION, WS_CLIPCHILDREN,
     WS_EX_APPWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_THICKFRAME,
 };
@@ -30,10 +31,15 @@ pub const WM_SETTINGS_CLOSED: u32 = WM_APP + 21;
 pub const WM_TEST_API: u32 = WM_APP + 22;
 pub const WM_TEST_TRANSLATION_API: u32 = WM_APP + 23;
 pub const WM_TEST_ACTION_API: u32 = WM_APP + 24;
+pub const WM_SET_LANGUAGE: u32 = WM_APP + 25;
 
-const CLASS_NAME: PCWSTR = w!("PromptOptimizer.SettingsWindow");
-const TITLE: PCWSTR = w!("PromptOptimizer 设置");
+const CLASS_NAME: PCWSTR = w!("TextPilot.SettingsWindow");
 const SETTINGS_HTML: &str = include_str!("settings.html");
+
+pub struct LanguageRequest {
+    pub language: UiLanguage,
+    pub error: Option<String>,
+}
 
 pub struct ApplyRequest {
     pub config: Config,
@@ -47,7 +53,7 @@ pub struct ApiTestRequest {
 
 pub struct ActionApiTestRequest {
     pub config: Config,
-    pub action: prompt_optimizer::config::CustomAction,
+    pub action: text_pilot::config::CustomAction,
     pub error: Option<String>,
 }
 
@@ -84,12 +90,13 @@ struct WebFormData {
     native_language: String,
     target_language: String,
     #[serde(default)]
-    actions: Vec<prompt_optimizer::config::CustomAction>,
+    actions: Vec<text_pilot::config::CustomAction>,
     play_sound: bool,
     auto_start: bool,
 }
 
 fn stage_active_profile(
+    language: UiLanguage,
     profiles: &mut [ApiProfile],
     active_profile: &mut String,
     form: &WebFormData,
@@ -102,17 +109,23 @@ fn stage_active_profile(
                 .trim()
                 .eq_ignore_ascii_case(active_profile.trim())
         })
-        .ok_or_else(|| format!("当前 API 配置不存在：{}", active_profile.trim()))?;
+        .ok_or_else(|| {
+            i18n::format(
+                language,
+                Message::ActiveProfileMissing,
+                active_profile.trim(),
+            )
+        })?;
     let temperature = form
         .temperature
         .trim()
         .parse::<f64>()
-        .map_err(|_| "温度必须是 0.0–2.0 之间的数字".to_string())?;
+        .map_err(|_| i18n::text(language, Message::TemperatureInvalid).to_string())?;
     let max_tokens = form
         .max_tokens
         .trim()
         .parse::<u32>()
-        .map_err(|_| "最大 Token 数必须是大于 0 的整数".to_string())?;
+        .map_err(|_| i18n::text(language, Message::MaxTokensInvalid).to_string())?;
     let mut models = Vec::new();
     for model in &form.models {
         let model = model.trim().to_string();
@@ -143,15 +156,20 @@ fn stage_active_profile(
     if profiles.iter().enumerate().any(|(index, item)| {
         index != active_index && item.name.trim().eq_ignore_ascii_case(profile.name.trim())
     }) {
-        return Err(format!("API 配置名称重复：{}", profile.name));
+        return Err(i18n::format(
+            language,
+            Message::DuplicateProfileName,
+            &profile.name,
+        ));
     }
     *active_profile = profile.name.clone();
     profiles[active_index] = profile;
     Ok(())
 }
 
-fn parse_form_data(value: &serde_json::Value) -> Result<WebFormData, String> {
-    serde_json::from_value(value.clone()).map_err(|error| format!("设置表单数据无效：{error}"))
+fn parse_form_data(language: UiLanguage, value: &serde_json::Value) -> Result<WebFormData, String> {
+    serde_json::from_value(value.clone())
+        .map_err(|error| i18n::format(language, Message::InvalidFormData, &error.to_string()))
 }
 
 fn config_from_form(
@@ -163,7 +181,12 @@ fn config_from_form(
     let mut config = current.clone();
     config.api_profiles = profiles.to_vec();
     config.active_profile = active_profile.to_string();
-    stage_active_profile(&mut config.api_profiles, &mut config.active_profile, form)?;
+    stage_active_profile(
+        current.ui_language,
+        &mut config.api_profiles,
+        &mut config.active_profile,
+        form,
+    )?;
     config.system_prompt = form.system_prompt.clone();
     let trans_prompt = form.translation_prompt.trim();
     config.translation_prompt = if trans_prompt.is_empty() {
@@ -194,13 +217,13 @@ fn config_from_form(
     if !form.actions.is_empty() {
         config.actions = form.actions.clone();
         if let Some(opt) = config.actions.iter().find(|a| {
-            a.id.eq_ignore_ascii_case(prompt_optimizer::config::DEFAULT_OPTIMIZE_ACTION_ID)
+            a.id.eq_ignore_ascii_case(text_pilot::config::DEFAULT_OPTIMIZE_ACTION_ID)
         }) {
             config.hotkey = opt.hotkey.clone();
             config.system_prompt = opt.system_prompt.clone();
         }
         if let Some(trans) = config.actions.iter().find(|a| {
-            a.id.eq_ignore_ascii_case(prompt_optimizer::config::DEFAULT_TRANSLATE_ACTION_ID)
+            a.id.eq_ignore_ascii_case(text_pilot::config::DEFAULT_TRANSLATE_ACTION_ID)
         }) {
             config.translation_hotkey = trans.hotkey.clone();
             config.translation_prompt = trans.system_prompt.clone();
@@ -217,8 +240,9 @@ fn stage_form_in_state(
     state: &mut SettingsState,
     value: &serde_json::Value,
 ) -> Result<WebFormData, String> {
-    let form = parse_form_data(value)?;
+    let form = parse_form_data(state.current.ui_language, value)?;
     stage_active_profile(
+        state.current.ui_language,
         &mut state.draft_profiles,
         &mut state.draft_active_profile,
         &form,
@@ -226,9 +250,9 @@ fn stage_form_in_state(
     Ok(form)
 }
 
-fn next_profile_name(profiles: &[ApiProfile]) -> String {
+fn next_profile_name(language: UiLanguage, profiles: &[ApiProfile]) -> String {
     (1_u32..)
-        .map(|index| format!("新配置 {index}"))
+        .map(|index| i18n::format(language, Message::NewProfileName, &index.to_string()))
         .find(|candidate| {
             !profiles
                 .iter()
@@ -274,10 +298,12 @@ pub unsafe fn show(
     };
     let _ = AdjustWindowRectExForDpi(&mut rect, style, false, ex_style, dpi);
     let params = CreateParams { owner, config };
+    let language = config.ui_language;
+    let title = wide(i18n::text(language, Message::SettingsTitle));
     let hwnd = CreateWindowExW(
         ex_style,
         CLASS_NAME,
-        TITLE,
+        PCWSTR(title.as_ptr()),
         style,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
@@ -317,6 +343,23 @@ pub unsafe fn focus(hwnd: HWND) {
     let _ = SetForegroundWindow(hwnd);
 }
 
+pub unsafe fn set_locale(hwnd: HWND, language: UiLanguage) {
+    let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut SettingsState;
+    if pointer.is_null() {
+        return;
+    }
+    let state = &mut *pointer;
+    state.current.ui_language = language;
+    let title = wide(i18n::text(language, Message::SettingsTitle));
+    let _ = SetWindowTextW(hwnd, PCWSTR(title.as_ptr()));
+    let Some(webview) = &state.webview else {
+        return;
+    };
+    let argument = serde_json::to_string(language.code()).unwrap_or_else(|_| "\"zh-CN\"".into());
+    let script = wide(&format!("window.setLocale({argument});"));
+    let _ = webview.ExecuteScript(PCWSTR(script.as_ptr()), None);
+}
+
 pub unsafe fn refresh(hwnd: HWND, config: &Config) {
     let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut SettingsState;
     if pointer.is_null() {
@@ -326,7 +369,15 @@ pub unsafe fn refresh(hwnd: HWND, config: &Config) {
     state.current = config.clone();
     state.draft_profiles = config.api_profiles.clone();
     state.draft_active_profile = config.active_profile.clone();
-    send_state_to_web(state, Some("配置已重新刷新"), false, false);
+    send_state_to_web(
+        state,
+        Some(i18n::text(
+            state.current.ui_language,
+            Message::SettingsRefreshed,
+        )),
+        false,
+        false,
+    );
 }
 
 pub unsafe fn complete_api_test(hwnd: HWND, result: Result<(), String>) {
@@ -336,7 +387,13 @@ pub unsafe fn complete_api_test(hwnd: HWND, result: Result<(), String>) {
     }
     let state = &mut *pointer;
     match result {
-        Ok(()) => send_status_to_web(state, "API 连接正常", false, true, false),
+        Ok(()) => send_status_to_web(
+            state,
+            i18n::text(state.current.ui_language, Message::ApiConnected),
+            false,
+            true,
+            false,
+        ),
         Err(error) => send_status_to_web(state, &error, true, false, false),
     }
 }
@@ -348,7 +405,13 @@ pub unsafe fn complete_translation_api_test(hwnd: HWND, result: Result<(), Strin
     }
     let state = &mut *pointer;
     match result {
-        Ok(()) => send_status_to_web(state, "翻译 API 连接正常", false, true, false),
+        Ok(()) => send_status_to_web(
+            state,
+            i18n::text(state.current.ui_language, Message::TranslationApiConnected),
+            false,
+            true,
+            false,
+        ),
         Err(error) => send_status_to_web(state, &error, true, false, false),
     }
 }
@@ -361,11 +424,20 @@ pub unsafe fn complete_action_api_test(hwnd: HWND, action_name: &str, result: Re
     let state = &mut *pointer;
     match result {
         Ok(()) => {
-            let msg = format!("「{}」API 连接正常（HTTP 200）", action_name);
+            let msg = i18n::format(
+                state.current.ui_language,
+                Message::ActionApiConnected,
+                action_name,
+            );
             send_status_to_web(state, &msg, false, true, false);
         }
         Err(error) => {
-            let msg = format!("「{}」API 测试失败：{}", action_name, error);
+            let msg = i18n::format_with_detail(
+                state.current.ui_language,
+                Message::ActionApiTestFailed,
+                action_name,
+                &error,
+            );
             send_status_to_web(state, &msg, true, false, false);
         }
     }
@@ -471,7 +543,11 @@ fn init_webview(hwnd: HWND) {
     let (user_data_dir, user_data_path) = match create_webview_user_data_dir() {
         Ok(value) => value,
         Err(error) => {
-            show_webview_error(hwnd, "设置页临时目录创建失败", &error.to_string());
+            show_webview_error(
+                hwnd,
+                Message::WebViewTempDirectoryFailed,
+                &error.to_string(),
+            );
             return;
         }
     };
@@ -482,14 +558,18 @@ fn init_webview(hwnd: HWND) {
     let env_handler = CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(
         move |result, environment| {
             if let Err(error) = result {
-                show_webview_error(hwnd, "WebView2 运行环境创建失败", &error.to_string());
+                show_webview_error(hwnd, Message::WebViewEnvironmentFailed, &error.to_string());
                 return Ok(());
             }
             if let Some(env) = environment {
                 let ctrl_handler = CreateCoreWebView2ControllerCompletedHandler::create(Box::new(
                     move |res, controller| {
                         if let Err(error) = res {
-                            show_webview_error(hwnd, "WebView2 控制器创建失败", &error.to_string());
+                            show_webview_error(
+                                hwnd,
+                                Message::WebViewControllerFailed,
+                                &error.to_string(),
+                            );
                             return Ok(());
                         }
                         if let Some(controller) = controller {
@@ -544,7 +624,7 @@ fn init_webview(hwnd: HWND) {
                                         } {
                                             show_webview_error(
                                                 hwnd,
-                                                "设置页消息通道创建失败",
+                                                Message::WebViewMessageChannelFailed,
                                                 &error.to_string(),
                                             );
                                             return Ok(());
@@ -555,7 +635,7 @@ fn init_webview(hwnd: HWND) {
                                         } {
                                             show_webview_error(
                                                 hwnd,
-                                                "设置页面加载失败",
+                                                Message::WebViewPageLoadFailed,
                                                 &error.to_string(),
                                             );
                                         }
@@ -563,24 +643,28 @@ fn init_webview(hwnd: HWND) {
                                     Err(error) => {
                                         show_webview_error(
                                             hwnd,
-                                            "WebView2 页面实例创建失败",
+                                            Message::WebViewInstanceFailed,
                                             &error.to_string(),
                                         );
                                     }
                                 }
                             }
                         } else {
-                            show_webview_error(hwnd, "WebView2 控制器不可用", "未返回控制器实例");
+                            show_webview_error(hwnd, Message::WebViewControllerUnavailable, "");
                         }
                         Ok(())
                     },
                 ));
                 if let Err(error) = unsafe { env.CreateCoreWebView2Controller(hwnd, &ctrl_handler) }
                 {
-                    show_webview_error(hwnd, "WebView2 控制器启动失败", &error.to_string());
+                    show_webview_error(
+                        hwnd,
+                        Message::WebViewControllerStartFailed,
+                        &error.to_string(),
+                    );
                 }
             } else {
-                show_webview_error(hwnd, "WebView2 运行环境不可用", "未返回运行环境实例");
+                show_webview_error(hwnd, Message::WebViewEnvironmentUnavailable, "");
             }
             Ok(())
         },
@@ -594,15 +678,14 @@ fn init_webview(hwnd: HWND) {
             &env_handler,
         )
     } {
-        show_webview_error(hwnd, "WebView2 启动失败", &error.to_string());
+        show_webview_error(hwnd, Message::WebViewStartFailed, &error.to_string());
     }
 }
 
 fn create_webview_user_data_dir() -> std::io::Result<(std::path::PathBuf, Vec<u16>)> {
     static NEXT_DIR_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let id = NEXT_DIR_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let dir =
-        std::env::temp_dir().join(format!("PromptOptimizer_WV2_{}_{}", std::process::id(), id));
+    let dir = std::env::temp_dir().join(format!("TextPilot_WV2_{}_{}", std::process::id(), id));
     std::fs::create_dir_all(&dir)?;
     let wide_path = wide(&dir.to_string_lossy());
     Ok((dir, wide_path))
@@ -620,18 +703,27 @@ fn clean_webview_temp_dir(dir: &std::path::Path) {
     }
 }
 
-fn show_webview_error(hwnd: HWND, context: &str, detail: &str) {
+fn show_webview_error(hwnd: HWND, message: Message, detail: &str) {
     if !unsafe { IsWindow(Some(hwnd)) }.as_bool() {
         return;
     }
+    let language = unsafe {
+        (GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut SettingsState)
+            .as_ref()
+            .map(|state| state.current.ui_language)
+            .unwrap_or(UiLanguage::ChineseSimplified)
+    };
+    let title = wide(i18n::text(language, Message::SettingsTitle));
     let message = wide(&format!(
-        "{context}。请确认已安装 Microsoft Edge WebView2 Runtime。\n\n{detail}"
+        "{}\n\n{}\n\n{detail}",
+        i18n::text(language, message),
+        i18n::text(language, Message::WebViewRuntimeRequired),
     ));
     unsafe {
         MessageBoxW(
             Some(hwnd),
             PCWSTR(message.as_ptr()),
-            w!("PromptOptimizer 设置"),
+            PCWSTR(title.as_ptr()),
             MB_OK | MB_ICONERROR,
         );
         let _ = DestroyWindow(hwnd);
@@ -654,14 +746,44 @@ fn handle_web_message(hwnd: HWND, json_str: &str) {
             state.draft_active_profile = state.current.active_profile.clone();
             send_state_to_web(state, None, false, false);
         }
+        "set_language" => {
+            let language = match val["language"].as_str().unwrap_or_default() {
+                "en" => UiLanguage::English,
+                _ => UiLanguage::ChineseSimplified,
+            };
+            let mut request = LanguageRequest {
+                language,
+                error: None,
+            };
+            let result = unsafe {
+                SendMessageW(
+                    state.owner,
+                    WM_SET_LANGUAGE,
+                    Some(WPARAM(hwnd.0 as usize)),
+                    Some(LPARAM((&mut request as *mut LanguageRequest) as isize)),
+                )
+            };
+            if result.0 == 1 {
+                state.current.ui_language = language;
+                unsafe { set_locale(hwnd, language) };
+            } else {
+                unsafe { set_locale(hwnd, state.current.ui_language) };
+                let message = request
+                    .error
+                    .as_deref()
+                    .unwrap_or(i18n::text(state.current.ui_language, Message::ApplyFailed));
+                send_status_to_web(state, message, true, false, false);
+            }
+        }
         "switch_profile" => {
+            let language = state.current.ui_language;
             if let Err(error) = stage_form_in_state(state, &val["data"]) {
                 send_status_to_web(state, &error, true, false, false);
                 return;
             }
             if let Some(name) = val["name"].as_str() {
                 state.draft_active_profile = name.to_string();
-                send_profile_state_to_web(state, "配置已修改（未保存）");
+                send_profile_state_to_web(state, i18n::text(language, Message::SettingsDirty));
             }
         }
         "profile_new" => {
@@ -669,14 +791,17 @@ fn handle_web_message(hwnd: HWND, json_str: &str) {
                 send_status_to_web(state, &error, true, false, false);
                 return;
             }
-            let new_name = next_profile_name(&state.draft_profiles);
+            let new_name = next_profile_name(state.current.ui_language, &state.draft_profiles);
             let new_p = ApiProfile {
                 name: new_name.clone(),
                 ..ApiProfile::default()
             };
             state.draft_profiles.push(new_p);
             state.draft_active_profile = new_name;
-            send_profile_state_to_web(state, "已创建新配置（未保存）");
+            send_profile_state_to_web(
+                state,
+                i18n::text(state.current.ui_language, Message::ProfileCreated),
+            );
         }
         "profile_delete" => {
             if let Err(error) = stage_form_in_state(state, &val["data"]) {
@@ -689,9 +814,20 @@ fn handle_web_message(hwnd: HWND, json_str: &str) {
                 if let Some(first) = state.draft_profiles.first() {
                     state.draft_active_profile = first.name.clone();
                 }
-                send_profile_state_to_web(state, "已删除配置（未保存）");
+                send_profile_state_to_web(
+                    state,
+                    i18n::text(state.current.ui_language, Message::ProfileDeleted),
+                );
             } else {
-                send_state_to_web(state, Some("至少需保留一个配置"), true, false);
+                send_state_to_web(
+                    state,
+                    Some(i18n::text(
+                        state.current.ui_language,
+                        Message::ProfileRequired,
+                    )),
+                    true,
+                    false,
+                );
             }
         }
         "save" => {
@@ -717,7 +853,7 @@ fn test_action_api_from_web(
     data: &serde_json::Value,
     action_id: &str,
 ) {
-    let form = match parse_form_data(data) {
+    let form = match parse_form_data(state.current.ui_language, data) {
         Ok(form) => form,
         Err(error) => {
             send_status_to_web(state, &error, true, false, false);
@@ -743,7 +879,11 @@ fn test_action_api_from_web(
 
     send_status_to_web(
         state,
-        &format!("正在测试「{}」API 连接...", action.name),
+        &i18n::format(
+            state.current.ui_language,
+            Message::ActionApiTesting,
+            &action.name,
+        ),
         false,
         false,
         true,
@@ -762,13 +902,16 @@ fn test_action_api_from_web(
         )
     };
     if result.0 != 1 {
-        let message = request.error.as_deref().unwrap_or("API 测试未能启动");
+        let message = request.error.as_deref().unwrap_or(i18n::text(
+            state.current.ui_language,
+            Message::ApiTestStartFailed,
+        ));
         send_status_to_web(state, message, true, false, false);
     }
 }
 
 fn save_from_web(hwnd: HWND, state: &mut SettingsState, data: &serde_json::Value) {
-    let form = match parse_form_data(data) {
+    let form = match parse_form_data(state.current.ui_language, data) {
         Ok(form) => form,
         Err(error) => {
             send_status_to_web(state, &error, true, false, false);
@@ -804,18 +947,23 @@ fn save_from_web(hwnd: HWND, state: &mut SettingsState, data: &serde_json::Value
         state.current = request.config;
         state.draft_profiles = state.current.api_profiles.clone();
         state.draft_active_profile = state.current.active_profile.clone();
-        send_state_to_web(state, Some("已保存并应用"), false, true);
+        send_state_to_web(
+            state,
+            Some(i18n::text(state.current.ui_language, Message::Saved)),
+            false,
+            true,
+        );
     } else {
         let msg = request
             .error
             .as_deref()
-            .unwrap_or("配置未能应用，请重写验证后提交");
+            .unwrap_or(i18n::text(state.current.ui_language, Message::ApplyFailed));
         send_status_to_web(state, msg, true, false, false);
     }
 }
 
 fn test_api_from_web(hwnd: HWND, state: &mut SettingsState, data: &serde_json::Value) {
-    let form = match parse_form_data(data) {
+    let form = match parse_form_data(state.current.ui_language, data) {
         Ok(form) => form,
         Err(error) => {
             send_status_to_web(state, &error, true, false, false);
@@ -835,7 +983,13 @@ fn test_api_from_web(hwnd: HWND, state: &mut SettingsState, data: &serde_json::V
         }
     };
 
-    send_status_to_web(state, "正在测试 API 连接...", false, false, true);
+    send_status_to_web(
+        state,
+        i18n::text(state.current.ui_language, Message::ApiTesting),
+        false,
+        false,
+        true,
+    );
     let mut request = ApiTestRequest {
         config,
         error: None,
@@ -849,13 +1003,16 @@ fn test_api_from_web(hwnd: HWND, state: &mut SettingsState, data: &serde_json::V
         )
     };
     if result.0 != 1 {
-        let message = request.error.as_deref().unwrap_or("API 测试未能启动");
+        let message = request.error.as_deref().unwrap_or(i18n::text(
+            state.current.ui_language,
+            Message::ApiTestStartFailed,
+        ));
         send_status_to_web(state, message, true, false, false);
     }
 }
 
 fn test_translation_api_from_web(hwnd: HWND, state: &mut SettingsState, data: &serde_json::Value) {
-    let form = match parse_form_data(data) {
+    let form = match parse_form_data(state.current.ui_language, data) {
         Ok(form) => form,
         Err(error) => {
             send_status_to_web(state, &error, true, false, false);
@@ -875,7 +1032,13 @@ fn test_translation_api_from_web(hwnd: HWND, state: &mut SettingsState, data: &s
         }
     };
 
-    send_status_to_web(state, "正在测试翻译 API 连接...", false, false, true);
+    send_status_to_web(
+        state,
+        i18n::text(state.current.ui_language, Message::TranslationApiTesting),
+        false,
+        false,
+        true,
+    );
     let mut request = ApiTestRequest {
         config,
         error: None,
@@ -889,7 +1052,10 @@ fn test_translation_api_from_web(hwnd: HWND, state: &mut SettingsState, data: &s
         )
     };
     if result.0 != 1 {
-        let message = request.error.as_deref().unwrap_or("翻译 API 测试未能启动");
+        let message = request.error.as_deref().unwrap_or(i18n::text(
+            state.current.ui_language,
+            Message::TranslationApiTestStartFailed,
+        ));
         send_status_to_web(state, message, true, false, false);
     }
 }
@@ -911,6 +1077,7 @@ fn send_state_to_web(
         .unwrap_or_default();
 
     let json = serde_json::json!({
+        "ui_language": state.current.ui_language.code(),
         "profiles": state.draft_profiles,
         "active_profile": state.draft_active_profile,
         "current_profile": current_p,
@@ -923,7 +1090,10 @@ fn send_state_to_web(
         "actions": state.current.actions,
         "play_sound": state.current.play_sound,
         "auto_start": state.current.auto_start,
-        "status": status.unwrap_or("所有修改统一点击“保存并应用”"),
+        "status": status.unwrap_or(i18n::text(
+            state.current.ui_language,
+            Message::SettingsReady,
+        )),
         "is_error": is_error,
         "is_success": is_success,
     });
@@ -995,7 +1165,13 @@ mod tests {
             ..WebFormData::default()
         };
 
-        stage_active_profile(&mut profiles, &mut active_profile, &form).unwrap();
+        stage_active_profile(
+            UiLanguage::ChineseSimplified,
+            &mut profiles,
+            &mut active_profile,
+            &form,
+        )
+        .unwrap();
 
         assert_eq!(active_profile, "工作配置");
         assert_eq!(profiles[0].name, "工作配置");
@@ -1016,7 +1192,13 @@ mod tests {
             ..WebFormData::default()
         };
 
-        let error = stage_active_profile(&mut profiles, &mut active_profile, &form).unwrap_err();
+        let error = stage_active_profile(
+            UiLanguage::ChineseSimplified,
+            &mut profiles,
+            &mut active_profile,
+            &form,
+        )
+        .unwrap_err();
 
         assert!(error.contains("温度必须"));
         assert_eq!(profiles, vec![original]);
@@ -1071,7 +1253,13 @@ mod tests {
             ..WebFormData::default()
         };
 
-        stage_active_profile(&mut profiles, &mut active_profile, &form).unwrap();
+        stage_active_profile(
+            UiLanguage::ChineseSimplified,
+            &mut profiles,
+            &mut active_profile,
+            &form,
+        )
+        .unwrap();
         active_profile = "备用配置".into();
 
         assert_eq!(profiles[0].model, "edited-before-switch");
@@ -1091,7 +1279,10 @@ mod tests {
             },
         ];
 
-        assert_eq!(next_profile_name(&profiles), "新配置 2");
+        assert_eq!(
+            next_profile_name(UiLanguage::ChineseSimplified, &profiles),
+            "新配置 2"
+        );
     }
 
     #[test]
@@ -1155,7 +1346,13 @@ mod tests {
             ..WebFormData::default()
         };
 
-        stage_active_profile(&mut profiles, &mut active_profile, &form).unwrap();
+        stage_active_profile(
+            UiLanguage::ChineseSimplified,
+            &mut profiles,
+            &mut active_profile,
+            &form,
+        )
+        .unwrap();
 
         assert_eq!(profiles[0].models, vec!["model-a", "model-b"]);
         assert_eq!(profiles[0].model, "model-b");

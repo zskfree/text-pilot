@@ -3,9 +3,6 @@ mod selection;
 mod settings;
 mod startup;
 
-use prompt_optimizer::api::ApiClient;
-use prompt_optimizer::config::{self, Config, ConfigError, CustomAction};
-use prompt_optimizer::hotkey::{parse_hotkey, HotkeyKind};
 use std::ffi::c_void;
 use std::fmt::{Display, Formatter};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -15,6 +12,10 @@ use std::sync::{
     Mutex,
 };
 use std::thread;
+use text_pilot::api::ApiClient;
+use text_pilot::config::{self, Config, ConfigError, CustomAction, UiLanguage};
+use text_pilot::hotkey::{parse_hotkey, HotkeyKind};
+use text_pilot::i18n::{self, Message};
 use windows::core::{w, Error as WindowsError, PCWSTR};
 use windows::Win32::Foundation::{
     CloseHandle, GetLastError, COLORREF, ERROR_ALREADY_EXISTS, HINSTANCE, HWND, LPARAM, LRESULT,
@@ -47,20 +48,20 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowLongPtrW, SetWindowPos, SetWindowTextW, SetWindowsHookExW, ShowWindow, TrackPopupMenu,
     TranslateMessage, UnhookWindowsHookEx, CREATESTRUCTW, CW_USEDEFAULT, GWLP_USERDATA, HHOOK,
     HICON, HWND_TOPMOST, IDC_ARROW, IMAGE_FLAGS, KBDLLHOOKSTRUCT, LLKHF_INJECTED, LR_DEFAULTCOLOR,
-    LWA_ALPHA, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MF_SEPARATOR, MF_STRING, MSG,
-    SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RETURNCMD,
-    TPM_RIGHTBUTTON, WH_KEYBOARD_LL, WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_CONTEXTMENU,
-    WM_DESTROY, WM_ERASEBKGND, WM_HOTKEY, WM_KEYDOWN, WM_KEYUP, WM_NCCREATE, WM_NULL, WM_PAINT,
-    WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    LWA_ALPHA, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MF_CHECKED, MF_POPUP, MF_SEPARATOR,
+    MF_STRING, MSG, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, TPM_BOTTOMALIGN, TPM_LEFTALIGN,
+    TPM_RETURNCMD, TPM_RIGHTBUTTON, WH_KEYBOARD_LL, WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP,
+    WM_CONTEXTMENU, WM_DESTROY, WM_ERASEBKGND, WM_HOTKEY, WM_KEYDOWN, WM_KEYUP, WM_NCCREATE,
+    WM_NULL, WM_PAINT, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WNDCLASSW,
+    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
-const APP_NAME: PCWSTR = w!("PromptOptimizer");
-const WINDOW_CLASS: PCWSTR = w!("PromptOptimizer.HiddenWindow");
-const STATUS_WINDOW_CLASS: PCWSTR = w!("PromptOptimizer.StatusPopup");
+const APP_NAME: PCWSTR = w!("TextPilot");
+const WINDOW_CLASS: PCWSTR = w!("TextPilot.HiddenWindow");
+const STATUS_WINDOW_CLASS: PCWSTR = w!("TextPilot.StatusPopup");
 const BASE_HOTKEY_ID: i32 = 0x5000;
 
-use prompt_optimizer::api::ActionTier;
+use text_pilot::api::ActionTier;
 
 const TRAY_ID: u32 = 1;
 const WM_TRAY: u32 = WM_APP + 1;
@@ -69,10 +70,12 @@ const WM_GESTURE_HOTKEY: u32 = WM_APP + 3;
 const MENU_SETTINGS: u32 = 1001;
 const MENU_RELOAD: u32 = 1002;
 const MENU_EXIT: u32 = 1003;
+const MENU_LANGUAGE_ENGLISH: u32 = 1004;
+const MENU_LANGUAGE_CHINESE: u32 = 1005;
 const STATUS_HEIGHT: i32 = 34;
 const STATUS_MIN_WIDTH: i32 = 112;
 const STATUS_MAX_WIDTH: i32 = 300;
-const ICON_FILE: &[u8] = include_bytes!("../assets/prompt-optimizer.ico");
+const ICON_FILE: &[u8] = include_bytes!("../assets/text-pilot.ico");
 const GESTURE_TIMER_ID: usize = 2;
 const GESTURE_INTERVAL_MS: u32 = 520;
 const TIER_DISPATCH_WINDOW_MS: u32 = 280;
@@ -93,16 +96,27 @@ struct PopupAnchor {
     work_right: i32,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum StatusKind {
+    #[default]
+    Neutral,
+    Progress,
+    Success,
+    Error,
+}
+
 struct StatusPopupState {
     hwnd: isize,
     visible: bool,
     anchor: Option<PopupAnchor>,
+    kind: StatusKind,
 }
 
 static STATUS_POPUP: Mutex<StatusPopupState> = Mutex::new(StatusPopupState {
     hwnd: 0,
     visible: false,
     anchor: None,
+    kind: StatusKind::Neutral,
 });
 
 #[derive(Clone, Debug, Default)]
@@ -326,20 +340,29 @@ fn idle_tooltip_text(config: &Config) -> String {
         .map(|a| format!("{}: {}", a.name, a.hotkey))
         .collect();
     if active_actions.is_empty() {
-        "PromptOptimizer (未启用快捷键)".into()
+        i18n::text(config.ui_language, Message::NoHotkeys).into()
     } else {
-        format!("运行中 | {}", active_actions.join(" | "))
+        format!(
+            "{} | {}",
+            i18n::text(config.ui_language, Message::Running),
+            active_actions.join(" | ")
+        )
     }
 }
 
 pub fn run() -> Result<(), AppError> {
     let _com_apartment = ComApartment::initialize()?;
+    let exe_path = std::env::current_exe().map_err(|error| AppError(error.to_string()))?;
+    let config_path = exe_path.with_file_name("config.json");
+    let (config, first_run, startup_warning) = load_startup_config(&config_path)?;
+    // Keep the pre-v0.5 mutex name so upgraded and legacy builds cannot run together.
     let mutex = unsafe { CreateMutexW(None, true, w!("Local\\PromptOptimizer.SingleInstance")) }?;
     if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+        let message = wide(i18n::text(config.ui_language, Message::AlreadyRunning));
         unsafe {
             MessageBoxW(
                 None,
-                w!("PromptOptimizer 已在运行。"),
+                PCWSTR(message.as_ptr()),
                 APP_NAME,
                 MB_OK | MB_ICONINFORMATION,
             );
@@ -347,10 +370,6 @@ pub fn run() -> Result<(), AppError> {
         }
         return Ok(());
     }
-
-    let exe_path = std::env::current_exe().map_err(|error| AppError(error.to_string()))?;
-    let config_path = exe_path.with_file_name("config.json");
-    let (config, first_run, startup_warning) = load_startup_config(&config_path)?;
 
     let instance = HINSTANCE(unsafe { GetModuleHandleW(None) }?.0);
     register_window_class(instance)?;
@@ -400,8 +419,8 @@ pub fn run() -> Result<(), AppError> {
         notify(
             hwnd,
             state.icon,
-            "错误",
-            "热键注册失败，请修改配置后重新加载",
+            i18n::text(state.config.ui_language, Message::InternalError),
+            i18n::text(state.config.ui_language, Message::HotkeyRegistrationFailed),
             true,
         );
     }
@@ -409,19 +428,25 @@ pub fn run() -> Result<(), AppError> {
         notify(
             hwnd,
             state.icon,
-            "开机自启设置失败",
+            i18n::text(state.config.ui_language, Message::AutoStartFailed),
             &error.to_string(),
             true,
         );
     }
     if let Some(warning) = startup_warning {
-        notify(hwnd, state.icon, "配置已重置", &warning, true);
+        notify(
+            hwnd,
+            state.icon,
+            i18n::text(state.config.ui_language, Message::ConfigReset),
+            &warning,
+            true,
+        );
     } else if first_run {
         notify(
             hwnd,
             state.icon,
-            "首次运行",
-            "已创建配置，请在设置中填写 API Key",
+            i18n::text(state.config.ui_language, Message::FirstRun),
+            i18n::text(state.config.ui_language, Message::FirstRunMessage),
             false,
         );
     }
@@ -580,18 +605,48 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
                     }
                 }
             }
+            settings::WM_SET_LANGUAGE => {
+                let request = lparam.0 as *mut settings::LanguageRequest;
+                if request.is_null() {
+                    return LRESULT(0);
+                }
+                let previous = state.config.ui_language;
+                state.config.ui_language = (*request).language;
+                match config::save(&state.config_path, &state.config) {
+                    Ok(()) => {
+                        (*request).error = None;
+                        update_tooltip(hwnd, state.icon, &idle_tooltip_text(&state.config));
+                        if !state.settings_hwnd.is_invalid()
+                            && IsWindow(Some(state.settings_hwnd)).as_bool()
+                        {
+                            settings::set_locale(state.settings_hwnd, state.config.ui_language);
+                        }
+                        return LRESULT(1);
+                    }
+                    Err(error) => {
+                        state.config.ui_language = previous;
+                        (*request).error = Some(error.to_string());
+                        return LRESULT(0);
+                    }
+                }
+            }
             settings::WM_TEST_API => {
                 let request = lparam.0 as *mut settings::ApiTestRequest;
                 if request.is_null() {
                     return LRESULT(0);
                 }
                 if state.busy {
-                    (*request).error = Some("后台任务正在运行，请稍候".into());
+                    (*request).error =
+                        Some(i18n::text(state.config.ui_language, Message::Busy).into());
                     return LRESULT(0);
                 }
                 let settings_hwnd = wparam.0 as isize;
                 state.busy = true;
-                update_tooltip(hwnd, state.icon, "正在测试 API…");
+                update_tooltip(
+                    hwnd,
+                    state.icon,
+                    i18n::text(state.config.ui_language, Message::ApiTesting),
+                );
                 if state
                     .worker_tx
                     .send(WorkerCommand::TestApi {
@@ -601,7 +656,9 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
                     .is_err()
                 {
                     state.busy = false;
-                    (*request).error = Some("API 工作线程不可用".into());
+                    (*request).error = Some(
+                        i18n::text(state.config.ui_language, Message::WorkerUnavailable).into(),
+                    );
                     return LRESULT(0);
                 }
                 (*request).error = None;
@@ -613,12 +670,17 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
                     return LRESULT(0);
                 }
                 if state.busy {
-                    (*request).error = Some("后台任务正在运行，请稍候".into());
+                    (*request).error =
+                        Some(i18n::text(state.config.ui_language, Message::Busy).into());
                     return LRESULT(0);
                 }
                 let settings_hwnd = wparam.0 as isize;
                 state.busy = true;
-                update_tooltip(hwnd, state.icon, "正在测试翻译 API…");
+                update_tooltip(
+                    hwnd,
+                    state.icon,
+                    i18n::text(state.config.ui_language, Message::TranslationApiTesting),
+                );
                 if state
                     .worker_tx
                     .send(WorkerCommand::TestTranslationApi {
@@ -628,7 +690,9 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
                     .is_err()
                 {
                     state.busy = false;
-                    (*request).error = Some("API 工作线程不可用".into());
+                    (*request).error = Some(
+                        i18n::text(state.config.ui_language, Message::WorkerUnavailable).into(),
+                    );
                     return LRESULT(0);
                 }
                 (*request).error = None;
@@ -640,7 +704,8 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
                     return LRESULT(0);
                 }
                 if state.busy {
-                    (*request).error = Some("后台任务正在运行，请稍候".into());
+                    (*request).error =
+                        Some(i18n::text(state.config.ui_language, Message::Busy).into());
                     return LRESULT(0);
                 }
                 let settings_hwnd = wparam.0 as isize;
@@ -649,7 +714,11 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
                 update_tooltip(
                     hwnd,
                     state.icon,
-                    &format!("正在测试「{}」API…", action_name),
+                    &i18n::format(
+                        state.config.ui_language,
+                        Message::ActionApiTesting,
+                        &action_name,
+                    ),
                 );
                 if state
                     .worker_tx
@@ -661,7 +730,9 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
                     .is_err()
                 {
                     state.busy = false;
-                    (*request).error = Some("API 工作线程不可用".into());
+                    (*request).error = Some(
+                        i18n::text(state.config.ui_language, Message::WorkerUnavailable).into(),
+                    );
                     return LRESULT(0);
                 }
                 (*request).error = None;
@@ -692,12 +763,13 @@ unsafe fn on_action_triggered(
     action_index: usize,
     tier: ActionTier,
 ) {
+    let language = state.config.ui_language;
     if state.busy {
         notify(
             hwnd,
             state.icon,
-            "PromptOptimizer",
-            "后台任务正在运行，请稍候",
+            "TextPilot",
+            i18n::text(language, Message::Busy),
             false,
         );
         return;
@@ -716,8 +788,8 @@ unsafe fn on_action_triggered(
         notify(
             hwnd,
             state.icon,
-            "缺少 API Key",
-            "请打开设置并填写当前 API 配置的 Key",
+            i18n::text(language, Message::MissingApiKeyTitle),
+            i18n::text(language, Message::MissingApiKey),
             true,
         );
         return;
@@ -730,19 +802,13 @@ unsafe fn on_action_triggered(
             state.active_task_id = Some(task_id);
 
             let action_name = action.name.clone();
-            let (tooltip_text, popup_text) = match tier {
-                ActionTier::Standard => (
-                    format!("正在{}…", action_name),
-                    format!("{}中…", action_name),
-                ),
-                ActionTier::Deep => (
-                    format!("正在{} (深度)…", action_name),
-                    format!("{}中 (深度)…", action_name),
-                ),
+            let message = match tier {
+                ActionTier::Standard => i18n::format(language, Message::Processing, &action_name),
+                ActionTier::Deep => i18n::format(language, Message::ProcessingDeep, &action_name),
             };
 
-            update_tooltip(hwnd, state.icon, &tooltip_text);
-            show_status_popup(&popup_text, false, true);
+            update_tooltip(hwnd, state.icon, &message);
+            show_status_popup(&message, StatusKind::Progress, true);
 
             let command = WorkerCommand::ExecuteAction {
                 task_id,
@@ -755,17 +821,29 @@ unsafe fn on_action_triggered(
             if state.worker_tx.send(command).is_err() {
                 state.busy = false;
                 state.active_task_id = None;
-                notify(hwnd, state.icon, "内部错误", "API 工作线程不可用", true);
+                notify(
+                    hwnd,
+                    state.icon,
+                    i18n::text(language, Message::InternalError),
+                    i18n::text(language, Message::WorkerUnavailable),
+                    true,
+                );
             }
         }
         Ok(None) => notify(
             hwnd,
             state.icon,
-            "PromptOptimizer",
-            "未检测到选中文本",
+            "TextPilot",
+            i18n::text(language, Message::NoSelection),
             false,
         ),
-        Err(error) => notify(hwnd, state.icon, "读取选区失败", &error.to_string(), true),
+        Err(error) => notify(
+            hwnd,
+            state.icon,
+            i18n::text(language, Message::ReadSelectionFailed),
+            &error.to_string(),
+            true,
+        ),
     }
 }
 
@@ -791,16 +869,28 @@ unsafe fn on_worker_done(hwnd: HWND, state: &mut AppState) {
                         if state.config.play_sound {
                             let _ = MessageBeep(MB_OK);
                         }
-                        notify(hwnd, state.icon, "PromptOptimizer", "已复制", false);
+                        show_status_popup(
+                            i18n::text(state.config.ui_language, Message::Copied),
+                            StatusKind::Success,
+                            false,
+                        );
                     }
-                    Err(error) => {
-                        notify(hwnd, state.icon, "写入剪贴板失败", &error.to_string(), true)
-                    }
+                    Err(error) => notify(
+                        hwnd,
+                        state.icon,
+                        i18n::text(state.config.ui_language, Message::ClipboardWriteFailed),
+                        &error.to_string(),
+                        true,
+                    ),
                 },
                 Err(error) => notify(
                     hwnd,
                     state.icon,
-                    &format!("{}失败", action_name),
+                    &format!(
+                        "{}: {}",
+                        action_name,
+                        i18n::text(state.config.ui_language, Message::InternalError)
+                    ),
                     &error,
                     true,
                 ),
@@ -847,10 +937,58 @@ unsafe fn show_tray_menu(hwnd: HWND, state: &mut AppState) {
     let Ok(menu) = CreatePopupMenu() else {
         return;
     };
-    let _ = AppendMenuW(menu, MF_STRING, MENU_SETTINGS as usize, w!("设置"));
-    let _ = AppendMenuW(menu, MF_STRING, MENU_RELOAD as usize, w!("重新加载配置"));
+    let Ok(language_menu) = CreatePopupMenu() else {
+        let _ = DestroyMenu(menu);
+        return;
+    };
+    let language = state.config.ui_language;
+    let _ = AppendMenuW(
+        menu,
+        MF_STRING,
+        MENU_SETTINGS as usize,
+        PCWSTR(wide(i18n::text(language, Message::Settings)).as_ptr()),
+    );
+    let _ = AppendMenuW(
+        menu,
+        MF_STRING,
+        MENU_RELOAD as usize,
+        PCWSTR(wide(i18n::text(language, Message::ReloadConfig)).as_ptr()),
+    );
+    let english_flags = if language == UiLanguage::English {
+        MF_STRING | MF_CHECKED
+    } else {
+        MF_STRING
+    };
+    let chinese_flags = if language == UiLanguage::ChineseSimplified {
+        MF_STRING | MF_CHECKED
+    } else {
+        MF_STRING
+    };
+    let _ = AppendMenuW(
+        language_menu,
+        english_flags,
+        MENU_LANGUAGE_ENGLISH as usize,
+        w!("English"),
+    );
+    let _ = AppendMenuW(
+        language_menu,
+        chinese_flags,
+        MENU_LANGUAGE_CHINESE as usize,
+        w!("简体中文"),
+    );
+    let _ = AppendMenuW(
+        menu,
+        MF_POPUP,
+        language_menu.0 as usize,
+        PCWSTR(wide(i18n::text(language, Message::Language)).as_ptr()),
+    );
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
-    let _ = AppendMenuW(menu, MF_STRING, MENU_EXIT as usize, w!("退出"));
+    let _ = AppendMenuW(
+        menu,
+        MF_STRING,
+        MENU_EXIT as usize,
+        PCWSTR(wide(i18n::text(language, Message::Exit)).as_ptr()),
+    );
     let mut point = POINT::default();
     let _ = GetCursorPos(&mut point);
     let _ = SetForegroundWindow(hwnd);
@@ -868,10 +1006,29 @@ unsafe fn show_tray_menu(hwnd: HWND, state: &mut AppState) {
     match command.0 as u32 {
         MENU_SETTINGS => open_config(hwnd, state),
         MENU_RELOAD => reload_config(hwnd, state),
+        MENU_LANGUAGE_ENGLISH => set_ui_language(hwnd, state, UiLanguage::English),
+        MENU_LANGUAGE_CHINESE => set_ui_language(hwnd, state, UiLanguage::ChineseSimplified),
         MENU_EXIT => {
             let _ = DestroyWindow(hwnd);
         }
         _ => {}
+    }
+}
+
+unsafe fn set_ui_language(hwnd: HWND, state: &mut AppState, language: UiLanguage) {
+    if state.config.ui_language == language {
+        return;
+    }
+    let previous = state.config.ui_language;
+    state.config.ui_language = language;
+    if let Err(error) = config::save(&state.config_path, &state.config) {
+        state.config.ui_language = previous;
+        notify(hwnd, state.icon, "TextPilot", &error.to_string(), true);
+        return;
+    }
+    update_tooltip(hwnd, state.icon, &idle_tooltip_text(&state.config));
+    if !state.settings_hwnd.is_invalid() && IsWindow(Some(state.settings_hwnd)).as_bool() {
+        settings::set_locale(state.settings_hwnd, language);
     }
 }
 
@@ -883,13 +1040,25 @@ unsafe fn open_config(hwnd: HWND, state: &mut AppState) {
     let instance = HINSTANCE(match GetModuleHandleW(None) {
         Ok(module) => module.0,
         Err(error) => {
-            notify(hwnd, state.icon, "打开设置失败", &error.to_string(), true);
+            notify(
+                hwnd,
+                state.icon,
+                i18n::text(state.config.ui_language, Message::OpenSettingsFailed),
+                &error.to_string(),
+                true,
+            );
             return;
         }
     });
     match settings::show(hwnd, instance, state.icon, &state.config) {
         Ok(settings_hwnd) => state.settings_hwnd = settings_hwnd,
-        Err(error) => notify(hwnd, state.icon, "打开设置失败", &error.to_string(), true),
+        Err(error) => notify(
+            hwnd,
+            state.icon,
+            i18n::text(state.config.ui_language, Message::OpenSettingsFailed),
+            &error.to_string(),
+            true,
+        ),
     }
 }
 
@@ -898,8 +1067,8 @@ unsafe fn reload_config(hwnd: HWND, state: &mut AppState) {
         notify(
             hwnd,
             state.icon,
-            "PromptOptimizer",
-            "优化进行中，暂不能重载配置",
+            "TextPilot",
+            i18n::text(state.config.ui_language, Message::ReloadBusy),
             false,
         );
         return;
@@ -907,7 +1076,13 @@ unsafe fn reload_config(hwnd: HWND, state: &mut AppState) {
     let new_config = match config::load_existing(&state.config_path) {
         Ok(config) => config,
         Err(error) => {
-            notify(hwnd, state.icon, "配置重载失败", &error.to_string(), true);
+            notify(
+                hwnd,
+                state.icon,
+                i18n::text(state.config.ui_language, Message::ReloadFailed),
+                &error.to_string(),
+                true,
+            );
             return;
         }
     };
@@ -916,9 +1091,21 @@ unsafe fn reload_config(hwnd: HWND, state: &mut AppState) {
             if !state.settings_hwnd.is_invalid() && IsWindow(Some(state.settings_hwnd)).as_bool() {
                 settings::refresh(state.settings_hwnd, &state.config);
             }
-            notify(hwnd, state.icon, "PromptOptimizer", "配置已重新加载", false);
+            notify(
+                hwnd,
+                state.icon,
+                "TextPilot",
+                i18n::text(state.config.ui_language, Message::Reloaded),
+                false,
+            );
         }
-        Err(error) => notify(hwnd, state.icon, "配置重载失败", &error, true),
+        Err(error) => notify(
+            hwnd,
+            state.icon,
+            i18n::text(state.config.ui_language, Message::ReloadFailed),
+            &error,
+            true,
+        ),
     }
 }
 
@@ -929,7 +1116,7 @@ unsafe fn apply_config(
     persist: bool,
 ) -> Result<(), String> {
     if state.busy {
-        return Err("后台任务进行中，请完成后再保存配置".into());
+        return Err(i18n::text(state.config.ui_language, Message::ApplyBusy).into());
     }
     new_config.validate().map_err(|error| error.to_string())?;
 
@@ -945,7 +1132,10 @@ unsafe fn apply_config(
             let _ = activate_hotkeys(hwnd, &old_config);
         }
         state.hotkeys_registered = old_registered;
-        return Err(format!("新热键注册失败：{error}"));
+        return Err(format!(
+            "{}: {error}",
+            i18n::text(new_config.ui_language, Message::HotkeyRegistrationFailed)
+        ));
     }
 
     if let Err(error) = startup::set_auto_start(new_config.auto_start, &state.exe_path) {
@@ -954,7 +1144,10 @@ unsafe fn apply_config(
             let _ = activate_hotkeys(hwnd, &old_config);
         }
         let _ = startup::set_auto_start(old_auto_start, &state.exe_path);
-        return Err(format!("开机自启设置失败：{error}"));
+        return Err(format!(
+            "{}: {error}",
+            i18n::text(new_config.ui_language, Message::AutoStartFailed)
+        ));
     }
 
     if persist {
@@ -991,7 +1184,7 @@ fn start_worker(
                     text,
                 } => {
                     let action_name = action.name.clone();
-                    let result = recover_worker_operation(|| {
+                    let result = recover_worker_operation(config.ui_language, || {
                         client
                             .execute_action_request(&config, &action, tier, &text, task_id)
                             .map_err(|error| error.to_string())
@@ -1015,7 +1208,7 @@ fn start_worker(
                     settings_hwnd,
                     config,
                 } => {
-                    let result = recover_worker_operation(|| {
+                    let result = recover_worker_operation(config.ui_language, || {
                         client
                             .test_connection(&config)
                             .map_err(|error| error.to_string())
@@ -1038,7 +1231,7 @@ fn start_worker(
                     settings_hwnd,
                     config,
                 } => {
-                    let result = recover_worker_operation(|| {
+                    let result = recover_worker_operation(config.ui_language, || {
                         client
                             .test_translation_connection(&config)
                             .map_err(|error| error.to_string())
@@ -1063,7 +1256,7 @@ fn start_worker(
                     config,
                 } => {
                     let action_name = action.name.clone();
-                    let result = recover_worker_operation(|| {
+                    let result = recover_worker_operation(config.ui_language, || {
                         client
                             .test_action_connection(&config, &action)
                             .map_err(|error| error.to_string())
@@ -1089,12 +1282,15 @@ fn start_worker(
     });
 }
 
-fn recover_worker_operation<Value, Operation>(operation: Operation) -> Result<Value, String>
+fn recover_worker_operation<Value, Operation>(
+    language: UiLanguage,
+    operation: Operation,
+) -> Result<Value, String>
 where
     Operation: FnOnce() -> Result<Value, String>,
 {
     catch_unwind(AssertUnwindSafe(operation))
-        .unwrap_or_else(|_| Err("后台任务发生异常，已恢复，可重新触发快捷键".into()))
+        .unwrap_or_else(|_| Err(i18n::text(language, Message::WorkerRecovered).into()))
 }
 
 fn activate_hotkeys(hwnd: HWND, config: &Config) -> Result<(), WindowsError> {
@@ -1393,10 +1589,18 @@ fn update_tooltip(hwnd: HWND, icon: HICON, text: &str) {
 
 fn notify(hwnd: HWND, icon: HICON, title: &str, message: &str, is_error: bool) {
     let _ = (hwnd, icon, title);
-    show_status_popup(message, is_error, false);
+    show_status_popup(
+        message,
+        if is_error {
+            StatusKind::Error
+        } else {
+            StatusKind::Neutral
+        },
+        false,
+    );
 }
 
-fn show_status_popup(message: &str, is_error: bool, new_task: bool) {
+fn show_status_popup(message: &str, kind: StatusKind, new_task: bool) {
     let concise: String = message.chars().take(80).collect();
     let dpi = popup_dpi();
     let width = status_text_width(&concise, dpi);
@@ -1443,6 +1647,7 @@ fn show_status_popup(message: &str, is_error: bool, new_task: bool) {
     let anchor = state.anchor.unwrap_or_else(|| capture_popup_anchor(dpi));
     let display_width = width.min(anchor.max_width);
     let (x, y) = anchor.position(display_width);
+    state.kind = kind;
     unsafe {
         let _ = SetWindowTextW(popup, PCWSTR(text.as_ptr()));
         let region = CreateRoundRectRgn(
@@ -1466,9 +1671,13 @@ fn show_status_popup(message: &str, is_error: bool, new_task: bool) {
         let _ = InvalidateRect(Some(popup), None, false);
         let _ = UpdateWindow(popup);
         let _ = KillTimer(Some(popup), 1);
-        let keep_open = new_task || message.starts_with("正在优化") || message == "优化中…";
+        let keep_open = new_task || kind == StatusKind::Progress;
         if !keep_open {
-            let duration = if is_error { 2400 } else { 1200 };
+            let duration = if kind == StatusKind::Error {
+                2400
+            } else {
+                1200
+            };
             SetTimer(Some(popup), 1, duration, Some(status_popup_timer));
         }
     }
@@ -1625,24 +1834,17 @@ unsafe fn paint_status_window(hwnd: HWND) {
 
     let mut text_buf = [0_u16; 96];
     let length = windows::Win32::UI::WindowsAndMessaging::GetWindowTextW(hwnd, &mut text_buf);
-    let message = String::from_utf16_lossy(&text_buf[..length.max(0) as usize]);
 
-    let dot_color =
-        if message.contains("正在") || message.contains("优化中") || message.contains("测试中")
-        {
-            COLORREF(0x00EB_6325)
-        } else if message.contains("完成")
-            || message.contains("成功")
-            || message.contains("正常")
-            || message.contains("已复制")
-        {
-            COLORREF(0x0081_B910)
-        } else if message.contains("失败") || message.contains("错误") || message.contains("重置")
-        {
-            COLORREF(0x0044_44EF)
-        } else {
-            COLORREF(0x0080_7464)
-        };
+    let kind = STATUS_POPUP
+        .lock()
+        .map(|state| state.kind)
+        .unwrap_or(StatusKind::Neutral);
+    let dot_color = match kind {
+        StatusKind::Progress => COLORREF(0x00EB_6325),
+        StatusKind::Success => COLORREF(0x0081_B910),
+        StatusKind::Error => COLORREF(0x0044_44EF),
+        StatusKind::Neutral => COLORREF(0x0080_7464),
+    };
 
     let dot_brush = CreateSolidBrush(dot_color);
     let dot_pen = CreatePen(windows::Win32::Graphics::Gdi::PS_SOLID, 1, dot_color);
@@ -1712,8 +1914,9 @@ fn tray_data(hwnd: HWND, icon: HICON) -> NOTIFYICONDATAW {
 }
 
 fn create_embedded_icon(size: i32) -> Result<HICON, AppError> {
-    let resource = ico_image_nearest_to(ICON_FILE, size as u32)
-        .ok_or_else(|| AppError("内嵌图标格式无效".into()))?;
+    let resource = ico_image_nearest_to(ICON_FILE, size as u32).ok_or_else(|| {
+        AppError(i18n::text(UiLanguage::ChineseSimplified, Message::InvalidEmbeddedIcon).into())
+    })?;
     unsafe {
         CreateIconFromResourceEx(
             resource,
@@ -1978,14 +2181,18 @@ mod status_popup_tests {
 
     #[test]
     fn worker_panic_is_converted_to_a_recoverable_error() {
-        let result = recover_worker_operation(|| -> Result<(), String> {
-            panic!("simulated worker failure")
-        });
+        let result =
+            recover_worker_operation(UiLanguage::ChineseSimplified, || -> Result<(), String> {
+                panic!("simulated worker failure")
+            });
 
         assert_eq!(
             result,
             Err("后台任务发生异常，已恢复，可重新触发快捷键".into())
         );
-        assert_eq!(recover_worker_operation(|| Ok(42)), Ok(42));
+        assert_eq!(
+            recover_worker_operation(UiLanguage::ChineseSimplified, || Ok(42)),
+            Ok(42)
+        );
     }
 }

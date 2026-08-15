@@ -195,7 +195,7 @@ impl ApiClient {
             .header("Authorization", &format!("Bearer {}", api.api_key.trim()))
             .header("Content-Type", "application/json")
             .header("Cache-Control", "no-store")
-            .header("X-PromptOptimizer-Request-Id", &request_id.to_string())
+            .header("X-TextPilot-Request-Id", &request_id.to_string())
             .send_json(request)
             .map_err(|error| ApiError::Network(sanitize(&error.to_string())))?;
 
@@ -786,8 +786,8 @@ mod tests {
     #[test]
     #[ignore = "requires an explicitly configured live API"]
     fn live_provider_keeps_consecutive_requests_isolated() {
-        let config_path = std::env::var_os("PROMPT_OPTIMIZER_LIVE_CONFIG")
-            .expect("PROMPT_OPTIMIZER_LIVE_CONFIG is required");
+        let config_path =
+            std::env::var_os("TEXT_PILOT_LIVE_CONFIG").expect("TEXT_PILOT_LIVE_CONFIG is required");
         let config = crate::config::load_existing(std::path::Path::new(&config_path)).unwrap();
         let client = ApiClient::new();
         let first = client
