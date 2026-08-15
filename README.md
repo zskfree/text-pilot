@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="TextPilot: select text in Windows, optimize prompts with global hotkeys, and copy the result">
+  <img src="./assets/readme/hero.en.svg" width="100%" alt="TextPilot: select text in Windows, optimize prompts with global hotkeys, and copy the result">
 </p>
 
 <p align="center">
