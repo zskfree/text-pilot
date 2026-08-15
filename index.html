@@ -655,7 +655,8 @@
       "id": "optimize",
       "name": "提示词优化",
       "hotkey": "Ctrl+DoubleF8",
-      "model": "",
+      "profile": "默认配置",
+      "model": "gpt-4o-mini",
       "system_prompt": "你是一个提示词优化助手……",
       "triple_prompt": "以深度模式优化提示词……",
       "enabled": true
@@ -664,7 +665,8 @@
       "id": "translate",
       "name": "智能文本翻译",
       "hotkey": "Ctrl+DoubleF9",
-      "model": "",
+      "profile": "默认配置",
+      "model": "gpt-5-mini",
       "system_prompt": "你是一个高精度的专业双向文本翻译引擎……",
       "triple_prompt": "输出原文与译文对照……",
       "enabled": true
@@ -675,7 +677,7 @@
   "auto_start": false
 }</pre>
       <div class="feature-desc" style="margin-top: 8px;">
-        <span data-i18n-html="configDetails"><code style="font-family: var(--font-mono); font-size: 12px;">models</code> stores the available models for this profile; <code style="font-family: var(--font-mono); font-size: 12px;">model</code> and <code style="font-family: var(--font-mono); font-size: 12px;">translation_model</code> are fallback models for normal and translation actions. <code style="font-family: var(--font-mono); font-size: 12px;">actions</code> stores actions, hotkeys, dedicated models, and Standard / Deep prompts. An unavailable dedicated action model falls back safely; built-in actions and legacy top-level fields are migrated and synchronized for compatibility. In this version, <code style="font-family: var(--font-mono); font-size: 12px;">result_mode</code> is fixed to <code style="font-family: var(--font-mono); font-size: 12px;">clipboard</code>.</span>
+        <span data-i18n-html="configDetails"><code style="font-family: var(--font-mono); font-size: 12px;">models</code> stores the available models for each profile. Every action binds a profile through <code style="font-family: var(--font-mono); font-size: 12px;">profile</code> and a model from that profile through <code style="font-family: var(--font-mono); font-size: 12px;">model</code>. Bindings are validated before saving and requests never silently use another action's profile or model. Legacy profile-level model fields remain for compatibility. In this version, <code style="font-family: var(--font-mono); font-size: 12px;">result_mode</code> is fixed to <code style="font-family: var(--font-mono); font-size: 12px;">clipboard</code>.</span>
       </div>
     </section>
 
@@ -703,7 +705,7 @@
         heroQuote: '选中文字，一次手势，优化提示词或智能翻译。', heroCite: '按住 <kbd>Ctrl</kbd> 快速按两次 <kbd>F8</kbd> 优化，或按两次 <kbd>F9</kbd> 翻译，结果自动进入剪贴板',
         featuresLabel: '核心特性', feature1Title: '⚡ 极简快捷，无需窗口', feature1Desc: '常驻系统托盘，把“选区 → 优化 → 粘贴”压缩成一次全局快捷手势。不打开聊天主窗口。', feature2Title: '🎯 智能选区提取', feature2Desc: '优先通过 Windows UI Automation 直接读取并在选区附近显示状态；失败时自动临时复制选区，读取后恢复原剪贴板。', feature3Title: '⚙️ 可配置动作与分级手势 (v0.5.0)', feature3Desc: '新增、编辑或禁用动作，为每个动作配置热键、专属模型及 Standard / Deep 提示词；支持同键 Double 与 Triple 分级路由。', feature4Title: '🌏 智能双向翻译 (v0.4.0)', feature4Desc: '使用独立的 <kbd>Ctrl</kbd> + 双击 <kbd>F9</kbd> 手势，根据母语与目标语言自动决定翻译方向；每套 API 配置可为优化和翻译分别选择模型。', feature5Title: '🪶 极致轻量常驻', feature5Desc: '基于原生 Rust 编写，不打包庞大 GUI 运行时；未打开设置窗口时，后台常驻内存约 ~2 MB。', feature6Title: '🎨 Apple / Win11 风格设置界面 (v0.3.0)', feature6Desc: '基于系统 WebView2 Runtime 渲染设置中心，支持系统深浅配色、多配置管理、自绘 Dropdown 和胶囊 Toggle；关闭窗口后尽力清理本次设置页临时目录。', feature7Title: '🔒 无状态与隐私安全', feature7Desc: '每次只发送本次选区文本与配置规则，不维护会话历史；兼容模式只临时使用剪贴板并随后恢复。', feature8Title: '🌐 兼容通用 API', feature8Desc: '支持任意 OpenAI 兼容的 <code style="font-family: var(--font-mono); font-size: 12px;">/chat/completions</code> 接口；每套服务配置可保存多个模型，并分别选择优化模型与翻译模型。',
         downloadsLabel: '下载与资源', downloadCurrent: '下载当前版本 v0.5.0 (TextPilot_v0.5.0.zip)', currentVersion: '当前版本', historicVersion: '历史版本', directDownload685: '直接下载 (685 KB)', directDownload636: '直接下载 (636 KB)', directDownload617: '直接下载 (617 KB)', directDownload535: '直接下载 (535 KB)', directDownload485: '直接下载 (485 KB)', release5Desc: '新增可配置动作、动作专属模型和 Standard / Deep 分级手势；修复状态框空白并导致主线程死锁的问题，强化配置原子替换与剪贴板恢复，补齐运行时错误本地化，并在托盘菜单中提供完整错误详情。', release4Desc: '新增母语与目标语言间的智能双向翻译、独立翻译模型和翻译连通性测试；两组多击热键具备冲突校验与有序回放，状态提示优先锚定当前选区。', release3Desc: '升级 WebView2 Apple / Win11 风格设置界面，支持系统深浅配色、多配置多模型选择和自动剪贴板兼容模式；修复兼容模式恢复剪贴板时的偶发崩溃，单次读取异常后程序与快捷键可继续运行。', release2Desc: '重构原生轻量 HTTP 客户端 (ureq)，提升无状态优化响应；完善全局设置、快捷手势与资源图标支持。', release1Desc: '首发版本，包含基础系统托盘常驻与 <kbd>Ctrl</kbd> 快速三击 <kbd>A</kbd> 原生选区文本优化。',
-        sourceRepo: 'GitHub 源代码仓库', sourceRepoDesc: '查看源码、构建方法与配置文档', releaseHistory: 'Release 版本历史', releaseHistoryDesc: '下载历次更新版本与安装包', feedback: '反馈与建议 (Issues)', feedbackDesc: '提交 Bug 或新功能建议', configLabel: '配置参考 (config.json)', configIntro: '配置存储于 EXE 同目录的 <code style="font-family: var(--font-mono); font-size: 12px;">config.json</code>，右键托盘选择“设置”即可在现代化界面中快捷管理多套配置：', configDetails: '<code style="font-family: var(--font-mono); font-size: 12px;">models</code> 保存该配置的可用模型列表，<code style="font-family: var(--font-mono); font-size: 12px;">model</code> 与 <code style="font-family: var(--font-mono); font-size: 12px;">translation_model</code> 分别表示普通动作和翻译动作的回退模型；<code style="font-family: var(--font-mono); font-size: 12px;">actions</code> 保存动作、热键、专属模型和 Standard / Deep 提示词。动作专属模型在当前 API 配置不可用时会安全回退；内置动作与旧顶层字段由程序兼容迁移和同步。当前版本的 <code style="font-family: var(--font-mono); font-size: 12px;">result_mode</code> 固定为 <code style="font-family: var(--font-mono); font-size: 12px;">clipboard</code>。', footer: '© 2026 TextPilot · Built with Rust', pageViews: '访问量 <span id="busuanzi_value_site_pv">--</span>', visitors: '访客数 <span id="busuanzi_value_site_uv">--</span>'
+        sourceRepo: 'GitHub 源代码仓库', sourceRepoDesc: '查看源码、构建方法与配置文档', releaseHistory: 'Release 版本历史', releaseHistoryDesc: '下载历次更新版本与安装包', feedback: '反馈与建议 (Issues)', feedbackDesc: '提交 Bug 或新功能建议', configLabel: '配置参考 (config.json)', configIntro: '配置存储于 EXE 同目录的 <code style="font-family: var(--font-mono); font-size: 12px;">config.json</code>，右键托盘选择“设置”即可在现代化界面中快捷管理多套配置：', configDetails: '<code style="font-family: var(--font-mono); font-size: 12px;">models</code> 保存每套配置的可用模型。每个动作通过 <code style="font-family: var(--font-mono); font-size: 12px;">profile</code> 绑定 API 配置，并通过 <code style="font-family: var(--font-mono); font-size: 12px;">model</code> 绑定该配置中的模型。保存前会校验绑定关系，运行时不会静默使用其他动作的配置或模型；配置级旧模型字段仅为兼容旧文件保留。当前版本的 <code style="font-family: var(--font-mono); font-size: 12px;">result_mode</code> 固定为 <code style="font-family: var(--font-mono); font-size: 12px;">clipboard</code>。', footer: '© 2026 TextPilot · Built with Rust', pageViews: '访问量 <span id="busuanzi_value_site_pv">--</span>', visitors: '访客数 <span id="busuanzi_value_site_uv">--</span>'
       };
       const en = {};
       document.querySelectorAll('[data-i18n], [data-i18n-html]').forEach(e => {

@@ -52,6 +52,8 @@ pub struct CustomAction {
     pub name: String,
     pub hotkey: String,
     #[serde(default)]
+    pub profile: String,
+    #[serde(default)]
     pub model: String,
     pub system_prompt: String,
     #[serde(default)]
@@ -71,6 +73,7 @@ pub fn default_actions(
             id: DEFAULT_OPTIMIZE_ACTION_ID.into(),
             name: "提示词优化".into(),
             hotkey: opt_hotkey.into(),
+            profile: String::new(),
             model: String::new(),
             system_prompt: opt_prompt.into(),
             triple_prompt: DEFAULT_OPTIMIZE_TRIPLE_PROMPT.into(),
@@ -80,6 +83,7 @@ pub fn default_actions(
             id: DEFAULT_TRANSLATE_ACTION_ID.into(),
             name: "智能文本翻译".into(),
             hotkey: trans_hotkey.into(),
+            profile: String::new(),
             model: String::new(),
             system_prompt: trans_prompt.into(),
             triple_prompt: DEFAULT_TRANSLATE_TRIPLE_PROMPT.into(),
@@ -89,6 +93,7 @@ pub fn default_actions(
             id: DEFAULT_CODE_REFACTOR_ACTION_ID.into(),
             name: "代码重构与解释".into(),
             hotkey: "Ctrl+DoubleF7".into(),
+            profile: String::new(),
             model: String::new(),
             system_prompt: DEFAULT_CODE_REFACTOR_PROMPT.into(),
             triple_prompt: DEFAULT_CODE_REFACTOR_TRIPLE_PROMPT.into(),
@@ -174,12 +179,16 @@ impl Default for Config {
         let translation_hotkey = "Ctrl+DoubleF9".to_string();
         let system_prompt = DEFAULT_SYSTEM_PROMPT.to_string();
         let translation_prompt = DEFAULT_TRANSLATION_PROMPT.to_string();
-        let actions = default_actions(
+        let mut actions = default_actions(
             &hotkey,
             &translation_hotkey,
             &system_prompt,
             &translation_prompt,
         );
+        for action in &mut actions {
+            action.profile = DEFAULT_API_PROFILE_NAME.into();
+            action.model = "gpt-4o-mini".into();
+        }
         Self {
             ui_language: UiLanguage::default(),
             active_profile: DEFAULT_API_PROFILE_NAME.into(),
@@ -404,6 +413,16 @@ fn english_config_detail(message: &str) -> String {
                 english_hotkey_detail(detail)
             );
         }
+        if let Some((name, profile)) = rest.split_once("」绑定的 API 配置不存在：") {
+            return format!("Action \"{name}\" references a missing API profile: {profile}");
+        }
+        if let Some((name, binding)) = rest.split_once("」绑定的模型不在配置「") {
+            if let Some((profile, model)) = binding.split_once("」中：") {
+                return format!(
+                    "Action \"{name}\" binds model \"{model}\", which is not in API profile \"{profile}\""
+                );
+            }
+        }
         if rest.contains("快捷键冲突") {
             return "Enabled action shortcuts conflict. Choose unique shortcuts.".into();
         }
@@ -555,6 +574,7 @@ impl Config {
                     id: DEFAULT_OPTIMIZE_ACTION_ID.into(),
                     name: "提示词优化".into(),
                     hotkey: hotkey.clone(),
+                    profile: active_profile.clone(),
                     model: String::new(),
                     system_prompt: file.system_prompt.clone(),
                     triple_prompt: DEFAULT_OPTIMIZE_TRIPLE_PROMPT.into(),
@@ -579,12 +599,40 @@ impl Config {
                     id: DEFAULT_TRANSLATE_ACTION_ID.into(),
                     name: "智能文本翻译".into(),
                     hotkey: translation_hotkey.clone(),
+                    profile: active_profile.clone(),
                     model: String::new(),
                     system_prompt: translation_prompt.clone(),
                     triple_prompt: DEFAULT_TRANSLATE_TRIPLE_PROMPT.into(),
                     enabled: true,
                 },
             );
+        }
+
+        for action in &mut actions {
+            if action.profile.trim().is_empty()
+                || !profiles.iter().any(|profile| {
+                    profile
+                        .name
+                        .trim()
+                        .eq_ignore_ascii_case(action.profile.trim())
+                })
+            {
+                action.profile = active_profile.clone();
+            }
+            if let Some(profile) = profiles.iter().find(|profile| {
+                profile
+                    .name
+                    .trim()
+                    .eq_ignore_ascii_case(action.profile.trim())
+            }) {
+                if !profile
+                    .models
+                    .iter()
+                    .any(|model| model.trim().eq_ignore_ascii_case(action.model.trim()))
+                {
+                    action.model = profile.models.first().cloned().unwrap_or_default();
+                }
+            }
         }
 
         Self {
@@ -666,6 +714,31 @@ impl Config {
                     action.name
                 )));
             }
+            let profile = self
+                .api_profiles
+                .iter()
+                .find(|profile| {
+                    profile
+                        .name
+                        .trim()
+                        .eq_ignore_ascii_case(action.profile.trim())
+                })
+                .ok_or_else(|| {
+                    ConfigError::Invalid(format!(
+                        "动作「{}」绑定的 API 配置不存在：{}",
+                        action.name, action.profile
+                    ))
+                })?;
+            if !profile
+                .models
+                .iter()
+                .any(|model| model.trim().eq_ignore_ascii_case(action.model.trim()))
+            {
+                return Err(ConfigError::Invalid(format!(
+                    "动作「{}」绑定的模型不在配置「{}」中：{}",
+                    action.name, profile.name, action.model
+                )));
+            }
             if action.enabled {
                 let spec = crate::hotkey::parse_hotkey(&action.hotkey).map_err(|e| {
                     ConfigError::Invalid(format!("动作「{}」快捷键无效：{}", action.name, e))
@@ -709,6 +782,15 @@ impl Config {
                 .name
                 .trim()
                 .eq_ignore_ascii_case(self.active_profile.trim())
+        })
+    }
+
+    pub fn action_api(&self, action: &CustomAction) -> Option<&ApiProfile> {
+        self.api_profiles.iter().find(|profile| {
+            profile
+                .name
+                .trim()
+                .eq_ignore_ascii_case(action.profile.trim())
         })
     }
 
@@ -1298,6 +1380,9 @@ mod tests {
         updated_profile.models = vec!["deepseek-ai/DeepSeek-V4-Flash".into()];
         updated_profile.model = "deepseek-ai/DeepSeek-V4-Flash".into();
         updated_profile.translation_model = "deepseek-ai/DeepSeek-V4-Flash".into();
+        for action in &mut updated.actions {
+            action.model = "deepseek-ai/DeepSeek-V4-Flash".into();
+        }
         updated.auto_start = true;
         save(&path, &updated).unwrap();
         assert_eq!(load_existing(&path).unwrap(), updated);
@@ -1422,13 +1507,63 @@ mod tests {
     }
 
     #[test]
-    fn action_model_may_be_unavailable_in_the_active_profile() {
+    fn action_may_bind_a_model_from_a_non_active_profile() {
         let mut config = Config::default();
-        config
-            .find_action_mut(DEFAULT_OPTIMIZE_ACTION_ID)
-            .unwrap()
-            .model = "other-profile-model".into();
+        config.api_profiles.push(ApiProfile {
+            name: "备用配置".into(),
+            models: vec!["other-profile-model".into()],
+            model: "other-profile-model".into(),
+            translation_model: "other-profile-model".into(),
+            ..ApiProfile::default()
+        });
+        let action = config.find_action_mut(DEFAULT_OPTIMIZE_ACTION_ID).unwrap();
+        action.profile = "备用配置".into();
+        action.model = "other-profile-model".into();
 
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn action_binding_must_reference_an_existing_profile_and_model() {
+        let mut config = Config::default();
+        let action = config.find_action_mut(DEFAULT_OPTIMIZE_ACTION_ID).unwrap();
+        action.profile = "不存在".into();
+        assert!(config.validate().is_err());
+
+        let action = config.find_action_mut(DEFAULT_OPTIMIZE_ACTION_ID).unwrap();
+        action.profile = DEFAULT_API_PROFILE_NAME.into();
+        action.model = "不存在的模型".into();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn legacy_actions_bind_to_the_active_profile_and_its_first_model() {
+        let config: Config = serde_json::from_str(
+            r#"{
+                "active_profile":"工作",
+                "api_profiles":[{
+                    "name":"工作",
+                    "api_key":"key",
+                    "base_url":"https://example.com/v1",
+                    "models":["model-a","model-b"],
+                    "model":"model-a",
+                    "translation_model":"model-b",
+                    "temperature":0.3,
+                    "max_tokens":512
+                }],
+                "actions":[{
+                    "id":"optimize",
+                    "name":"优化",
+                    "hotkey":"Ctrl+DoubleF8",
+                    "system_prompt":"优化"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        let action = config.find_action(DEFAULT_OPTIMIZE_ACTION_ID).unwrap();
+        assert_eq!(action.profile, "工作");
+        assert_eq!(action.model, "model-a");
         assert!(config.validate().is_ok());
     }
 
@@ -1474,7 +1609,8 @@ mod tests {
             id: "summary".into(),
             name: "提炼摘要".into(),
             hotkey: "Ctrl+DoubleF6".into(),
-            model: String::new(),
+            profile: DEFAULT_API_PROFILE_NAME.into(),
+            model: "gpt-4o-mini".into(),
             system_prompt: "请提炼核心摘要".into(),
             triple_prompt: "请提供详细分点摘要与关键词".into(),
             enabled: true,

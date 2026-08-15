@@ -43,7 +43,7 @@ cargo build --release
 
 ### 2. 配置模型
 
-右键托盘图标，选择 **设置**。设置窗口分为“模型与服务”“动作与规则”“应用行为”三页，可管理全部配置项。每套 API 配置可以保存多个模型（每行一个），并通过“全局主模型”与“翻译默认模型”下拉框选择回退模型。动作可单独指定模型；切换到不包含该模型的 API 配置时，普通动作回退到该配置的主模型，翻译动作回退到翻译默认模型。至少填写 API Key，并确认服务地址和所选模型可用；可测试当前动作连接，再点击 **保存并应用**。
+右键托盘图标，选择 **设置**。设置窗口分为“模型与服务”“动作与规则”“应用行为”三页，可管理全部配置项。每套 API 配置可以保存多个模型（每行一个）。每个动作独立绑定一套 API 配置及该配置中的专属模型，因此既可共享配置但使用不同模型，也可分别使用不同配置和模型。保存前必须保证绑定关系有效，运行时不会静默混用其他动作或配置的模型。至少填写 API Key，并确认服务地址和所选模型可用；可测试当前动作连接，再点击 **保存并应用**。
 
 连接失败时，窗口底部显示错误摘要，悬停可查看完整信息；配置中的 API Key 会自动隐藏。“动作与规则”页可以管理内置及自定义动作的名称、热键、启用状态、专属模型、标准提示词和可选深度提示词，并设置翻译语种。
 
@@ -79,7 +79,8 @@ cargo build --release
       "id": "optimize",
       "name": "提示词优化",
       "hotkey": "Ctrl+DoubleF8",
-      "model": "",
+      "profile": "默认配置",
+      "model": "gpt-4o-mini",
       "system_prompt": "你是提示词优化助手……只返回优化后的提示词。",
       "triple_prompt": "以深度模式优化提示词……",
       "enabled": true
@@ -88,7 +89,8 @@ cargo build --release
       "id": "translate",
       "name": "智能文本翻译",
       "hotkey": "Ctrl+DoubleF9",
-      "model": "",
+      "profile": "默认配置",
+      "model": "gpt-5-mini",
       "system_prompt": "双向翻译方向执行令……",
       "triple_prompt": "输出原文与译文对照……",
       "enabled": true
@@ -100,7 +102,7 @@ cargo build --release
 }
 ```
 
-> `base_url` 应指向 API 根路径，例如 `https://api.openai.com/v1`；程序会自动追加 `/chat/completions`。`actions` 是 v0.5.0 的动作列表；`model` 留空表示使用当前 API 配置的回退模型，指定模型在当前配置中不存在时也会安全回退。为兼容旧配置，内置 `optimize` 与 `translate` 动作会和顶层 `hotkey`、`translation_hotkey`、`system_prompt`、`translation_prompt` 字段自动迁移及同步，建议通过设置页修改，避免手工维护出冲突值。v0.1.0 及更早版本的重复顶层 API 字段会在加载时自动迁移到当前配置，并在下次保存时清理。不要提交或分享包含真实 API Key 的配置文件。
+> `base_url` 应指向 API 根路径，例如 `https://api.openai.com/v1`；程序会自动追加 `/chat/completions`。每个动作通过 `profile` 绑定一套 API 配置，通过 `model` 绑定该配置中的具体模型，因此不同动作既可使用同一配置中的不同模型，也可使用不同配置中的不同模型。新配置保存时要求绑定关系有效；旧配置缺少字段时会在加载阶段迁移到活动配置及其首个模型。为兼容旧配置，内置 `optimize` 与 `translate` 动作会和顶层 `hotkey`、`translation_hotkey`、`system_prompt`、`translation_prompt` 字段自动迁移及同步。不要提交或分享包含真实 API Key 的配置文件。
 
 ### 3. 完成第一次提示词优化或文本翻译
 

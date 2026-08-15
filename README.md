@@ -43,7 +43,7 @@ The output is `target\release\TextPilot.exe`.
 
 ### 2. Configure a model
 
-Right-click the tray icon and choose **Settings**. The window has **Models & Services**, **Actions & Rules**, and **App Behavior** pages. Each API profile can store multiple models, one per line; **Global Primary Model** and **Default Translation Model** select fallback models. An action may specify its own model. When an API profile does not contain that model, ordinary actions fall back to that profile’s primary model and translation actions fall back to the translation default. Fill in at least an API key, verify that the endpoint and selected model work, test the current action’s connection, then click **Save & Apply**.
+Right-click the tray icon and choose **Settings**. The window has **Models & Services**, **Actions & Rules**, and **App Behavior** pages. Each API profile can store multiple models, one per line. Every action independently binds one API profile and one model from that profile, so actions can share a profile while using different models or use entirely different profiles and models. Bindings must be valid before saving; runtime requests never silently mix another action’s profile or model. Fill in at least an API key, verify that the endpoint and selected model work, test the current action’s connection, then click **Save & Apply**.
 
 On connection failure, the bottom of the window shows an error summary; hover it for full details. API keys are masked automatically. **Actions & Rules** manages built-in and custom action names, hotkeys, enabled state, per-action models, Standard prompts, optional Deep prompts, and translation languages.
 
@@ -79,7 +79,8 @@ For troubleshooting, inspect `config.json` beside the EXE. Its complete structur
       "id": "optimize",
       "name": "Prompt Optimization",
       "hotkey": "Ctrl+DoubleF8",
-      "model": "",
+      "profile": "Default Profile",
+      "model": "gpt-4o-mini",
       "system_prompt": "You are a prompt optimization assistant… Return only the optimized prompt.",
       "triple_prompt": "Optimize the prompt in Deep mode…",
       "enabled": true
@@ -88,7 +89,8 @@ For troubleshooting, inspect `config.json` beside the EXE. Its complete structur
       "id": "translate",
       "name": "Intelligent Text Translation",
       "hotkey": "Ctrl+DoubleF9",
-      "model": "",
+      "profile": "Default Profile",
+      "model": "gpt-5-mini",
       "system_prompt": "Bidirectional translation direction instruction…",
       "triple_prompt": "Output the original and translation side by side…",
       "enabled": true
@@ -100,7 +102,7 @@ For troubleshooting, inspect `config.json` beside the EXE. Its complete structur
 }
 ```
 
-> `base_url` must point to the API root, such as `https://api.openai.com/v1`; the application appends `/chat/completions`. `actions` is the v0.5.0 action list. An empty `model` uses the current profile’s fallback model; a specified model that is absent from that profile also falls back safely. For backward compatibility, built-in `optimize` and `translate` actions are migrated and synchronized with top-level `hotkey`, `translation_hotkey`, `system_prompt`, and `translation_prompt`. Prefer the Settings UI to avoid conflicting manually maintained values. Repeated top-level API fields from v0.1.0 and earlier are migrated into the current profile on load and removed on the next save. Never commit or share a configuration file containing a real API key.
+> `base_url` must point to the API root, such as `https://api.openai.com/v1`; the application appends `/chat/completions`. Each action binds an API profile through `profile` and a concrete model from that profile through `model`. Different actions can therefore use different models from one profile or models from entirely different profiles. New saves require valid bindings; legacy actions missing these fields migrate to the active profile and its first model when loaded. Built-in `optimize` and `translate` actions remain synchronized with their legacy top-level hotkey and prompt fields. Never commit or share a configuration file containing a real API key.
 
 ### 3. Run your first prompt optimization or translation
 

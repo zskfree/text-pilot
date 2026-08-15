@@ -159,10 +159,18 @@ impl ApiClient {
         text: &str,
         request_id: u64,
     ) -> Result<String, ApiError> {
-        let api = config
-            .active_api()
-            .ok_or_else(|| ApiError::InvalidConfig("当前配置不存在".into()))?;
-        let model = action_model(api, action);
+        let api = config.action_api(action).ok_or_else(|| {
+            ApiError::InvalidConfig(format!(
+                "动作「{}」绑定的 API 配置不存在：{}",
+                action.name, action.profile
+            ))
+        })?;
+        let model = action_model(api, action).ok_or_else(|| {
+            ApiError::InvalidConfig(format!(
+                "动作「{}」绑定的模型不在配置「{}」中：{}",
+                action.name, api.name, action.model
+            ))
+        })?;
         let request = build_action_request(config, api, action, tier, text, model);
         self.send_chat_request(api, &request, request_id)
     }
@@ -274,22 +282,11 @@ impl ApiClient {
     }
 }
 
-fn action_model<'a>(api: &'a ApiProfile, action: &crate::config::CustomAction) -> &'a str {
-    if let Some(model) = api
-        .models
+fn action_model<'a>(api: &'a ApiProfile, action: &crate::config::CustomAction) -> Option<&'a str> {
+    api.models
         .iter()
         .find(|model| model.trim().eq_ignore_ascii_case(action.model.trim()))
-    {
-        return model.trim();
-    }
-    if action
-        .id
-        .eq_ignore_ascii_case(crate::config::DEFAULT_TRANSLATE_ACTION_ID)
-    {
-        api.translation_model.trim()
-    } else {
-        api.model.trim()
-    }
+        .map(|model| model.trim())
 }
 
 fn build_chat_request<'a>(
@@ -830,7 +827,7 @@ mod tests {
     }
 
     #[test]
-    fn action_models_use_valid_override_or_action_specific_fallback() {
+    fn action_models_require_a_model_from_the_bound_profile() {
         let mut config = Config::default();
         let api = config.active_api_mut().unwrap();
         api.models = vec!["model-a".into(), "model-b".into()];
@@ -853,9 +850,54 @@ mod tests {
         invalid_translation_override.model = "missing-model".into();
         let api = config.active_api().unwrap();
 
-        assert_eq!(action_model(api, &valid_override), "model-b");
-        assert_eq!(action_model(api, &invalid_override), "model-a");
-        assert_eq!(action_model(api, &invalid_translation_override), "model-b");
+        assert_eq!(action_model(api, &valid_override), Some("model-b"));
+        assert_eq!(action_model(api, &invalid_override), None);
+        assert_eq!(action_model(api, &invalid_translation_override), None);
+    }
+
+    #[test]
+    fn action_request_uses_its_bound_profile_and_model() {
+        let (base_url, request_rx) =
+            mock_response_with_request(200, r#"{"choices":[{"message":{"content":"OK"}}]}"#);
+        let mut config = Config::default();
+        config.api_profiles.push(ApiProfile {
+            name: "备用配置".into(),
+            api_key: "backup-key".into(),
+            base_url,
+            models: vec!["backup-model".into()],
+            model: "backup-model".into(),
+            translation_model: "backup-model".into(),
+            temperature: 0.8,
+            max_tokens: 1024,
+        });
+        let action = config
+            .find_action_mut(crate::config::DEFAULT_OPTIMIZE_ACTION_ID)
+            .unwrap();
+        action.profile = "备用配置".into();
+        action.model = "backup-model".into();
+        let action = action.clone();
+
+        assert_eq!(
+            ApiClient::new()
+                .execute_action(&config, &action, ActionTier::Standard, "input")
+                .unwrap(),
+            "OK"
+        );
+
+        let request = request_rx.recv().unwrap();
+        let request_text = String::from_utf8_lossy(&request);
+        assert!(request_text
+            .to_ascii_lowercase()
+            .contains("authorization: bearer backup-key"));
+        let body_start = request
+            .windows(4)
+            .position(|part| part == b"\r\n\r\n")
+            .unwrap()
+            + 4;
+        let body: serde_json::Value = serde_json::from_slice(&request[body_start..]).unwrap();
+        assert_eq!(body["model"], "backup-model");
+        assert_eq!(body["temperature"], 0.8);
+        assert_eq!(body["max_tokens"], 1024);
     }
 
     #[test]

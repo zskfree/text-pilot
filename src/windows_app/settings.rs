@@ -133,7 +133,15 @@ fn stage_active_profile(
             models.push(model);
         }
     }
-    let selected_model = form.model.trim().to_string();
+    // 界面已移除全局主模型下拉框：表单未提供时以模型列表首项填充，保持配置结构兼容
+    let selected_model = {
+        let explicit = form.model.trim();
+        if explicit.is_empty() {
+            models.first().cloned().unwrap_or_default()
+        } else {
+            explicit.to_string()
+        }
+    };
     if models.is_empty() && !selected_model.is_empty() {
         models.push(selected_model.clone());
     }
@@ -183,6 +191,7 @@ fn config_from_form(
     let mut config = current.clone();
     config.api_profiles = profiles.to_vec();
     config.active_profile = active_profile.to_string();
+    let previous_active_profile = active_profile.to_string();
     stage_active_profile(
         current.ui_language,
         &mut config.api_profiles,
@@ -229,6 +238,36 @@ fn config_from_form(
         }) {
             config.translation_hotkey = trans.hotkey.clone();
             config.translation_prompt = trans.system_prompt.clone();
+        }
+    }
+
+    for action in &mut config.actions {
+        if action
+            .profile
+            .trim()
+            .eq_ignore_ascii_case(previous_active_profile.trim())
+            && !previous_active_profile
+                .trim()
+                .eq_ignore_ascii_case(config.active_profile.trim())
+        {
+            action.profile = config.active_profile.clone();
+        }
+        if action.profile.trim().is_empty() {
+            action.profile = config.active_profile.clone();
+        }
+        if let Some(profile) = config.api_profiles.iter().find(|profile| {
+            profile
+                .name
+                .trim()
+                .eq_ignore_ascii_case(action.profile.trim())
+        }) {
+            if !profile
+                .models
+                .iter()
+                .any(|model| model.trim().eq_ignore_ascii_case(action.model.trim()))
+            {
+                action.model = profile.models.first().cloned().unwrap_or_default();
+            }
         }
     }
 
@@ -1360,5 +1399,85 @@ mod tests {
 
         assert_eq!(profiles[0].models, vec!["model-a", "model-b"]);
         assert_eq!(profiles[0].model, "model-b");
+    }
+
+    #[test]
+    fn saving_binds_unbound_actions_to_a_dedicated_model() {
+        let current = Config::default();
+        let mut actions = current.actions.clone();
+        for action in &mut actions {
+            action.model.clear();
+        }
+        let form = WebFormData {
+            profile_name: current.active_profile.clone(),
+            api_key: current.api_profiles[0].api_key.clone(),
+            base_url: current.api_profiles[0].base_url.clone(),
+            models: vec!["model-x".into(), "model-y".into()],
+            temperature: "0.3".into(),
+            max_tokens: "512".into(),
+            system_prompt: current.system_prompt.clone(),
+            translation_prompt: current.translation_prompt.clone(),
+            hotkey: current.hotkey.clone(),
+            translation_hotkey: current.translation_hotkey.clone(),
+            native_language: current.native_language.clone(),
+            target_language: current.target_language.clone(),
+            actions,
+            play_sound: current.play_sound,
+            auto_start: current.auto_start,
+            ..WebFormData::default()
+        };
+
+        let saved = config_from_form(
+            &current,
+            &current.api_profiles,
+            &current.active_profile,
+            &form,
+        )
+        .unwrap();
+
+        assert!(saved.actions.iter().all(|action| action.model == "model-x"));
+    }
+
+    #[test]
+    fn editing_active_profile_preserves_actions_bound_to_another_profile() {
+        let mut current = Config::default();
+        current.api_profiles.push(ApiProfile {
+            name: "备用配置".into(),
+            models: vec!["backup-model".into()],
+            model: "backup-model".into(),
+            translation_model: "backup-model".into(),
+            ..ApiProfile::default()
+        });
+        let action = current
+            .find_action_mut(text_pilot::config::DEFAULT_OPTIMIZE_ACTION_ID)
+            .unwrap();
+        action.profile = "备用配置".into();
+        action.model = "backup-model".into();
+        let form = WebFormData {
+            profile_name: current.active_profile.clone(),
+            api_key: current.api_profiles[0].api_key.clone(),
+            base_url: current.api_profiles[0].base_url.clone(),
+            models: vec!["active-model".into()],
+            temperature: "0.3".into(),
+            max_tokens: "512".into(),
+            actions: current.actions.clone(),
+            play_sound: current.play_sound,
+            auto_start: current.auto_start,
+            ..WebFormData::default()
+        };
+
+        let saved = config_from_form(
+            &current,
+            &current.api_profiles,
+            &current.active_profile,
+            &form,
+        )
+        .unwrap();
+        let action = saved
+            .find_action(text_pilot::config::DEFAULT_OPTIMIZE_ACTION_ID)
+            .unwrap();
+
+        assert_eq!(action.profile, "备用配置");
+        assert_eq!(action.model, "backup-model");
     }
 }
