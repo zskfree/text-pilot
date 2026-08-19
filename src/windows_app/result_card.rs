@@ -1,6 +1,7 @@
 use super::clipboard;
 use serde::{Deserialize, Serialize};
 use std::ffi::c_void;
+use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use text_pilot::config::UiLanguage;
@@ -22,14 +23,13 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetCursorPos, GetWindowLongPtrW,
     IsWindow, LoadCursorW, MessageBoxW, PostMessageW, RegisterClassW, SetForegroundWindow,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, CREATESTRUCTW, CW_USEDEFAULT, GWLP_USERDATA,
-    IDC_ARROW, MB_ICONERROR, MB_OK, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_SHOW, WA_INACTIVE,
-    WINDOW_EX_STYLE, WINDOW_STYLE, WM_ACTIVATE, WM_APP, WM_CLOSE, WM_CREATE, WM_DESTROY,
-    WM_DPICHANGED, WM_NCCREATE, WM_SIZE, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, CREATESTRUCTW, GWLP_USERDATA, IDC_ARROW,
+    MB_ICONERROR, MB_OK, SWP_NOACTIVATE, SW_SHOW, WA_INACTIVE, WINDOW_EX_STYLE, WINDOW_STYLE,
+    WM_ACTIVATE, WM_APP, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DPICHANGED, WM_NCCREATE, WM_SIZE,
+    WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 pub const WM_RESULT_CARD_CLOSED: u32 = WM_APP + 30;
@@ -470,7 +470,7 @@ fn init_webview(hwnd: HWND) {
             &env_handler,
         )
     } {
-        show_webview_error(hwnd, Message::WebViewEnvironmentStartFailed, &error.to_string());
+        show_webview_error(hwnd, Message::WebViewEnvironmentFailed, &error.to_string());
     }
 }
 
@@ -548,7 +548,7 @@ fn show_webview_error(hwnd: HWND, message: Message, detail: &str) {
         return;
     }
     let language = UiLanguage::ChineseSimplified;
-    let title = wide(i18n::text(language, Message::AppName));
+    let title = wide("TextPilot");
     let message = wide(&format!(
         "{}\n\n{}\n\n{detail}",
         i18n::text(language, message),
