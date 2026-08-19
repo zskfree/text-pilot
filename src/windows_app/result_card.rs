@@ -4,17 +4,17 @@ use std::os::windows::ffi::OsStrExt;
 use std::sync::Mutex;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{
-    COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
+    COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM,
 };
 use windows::Win32::Graphics::Dwm::{
     DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
 };
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, CreateFontW, CreatePen, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint,
-    FillRect, GetMonitorInfoW, MonitorFromRect, RoundRect, SelectObject, SetBkColor, SetBkMode,
-    SetTextColor, DEFAULT_CHARSET, DT_END_ELLIPSIS, DT_LEFT, DT_SINGLELINE, DT_VCENTER,
-    FF_DONTCARE, FONT_CLIP_PRECISION, FONT_OUTPUT_PRECISION, FONT_QUALITY, HBRUSH, HDC, HFONT,
-    HPEN, MONITORINFO, MONITOR_DEFAULTTONEAREST, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
+    FillRect, GetMonitorInfoW, GetTextExtentPoint32W, MonitorFromRect, RoundRect, SelectObject,
+    SetBkColor, SetBkMode, SetTextColor, DEFAULT_CHARSET, DT_END_ELLIPSIS, DT_LEFT, DT_SINGLELINE,
+    DT_VCENTER, FF_DONTCARE, FONT_CLIP_PRECISION, FONT_OUTPUT_PRECISION, FONT_QUALITY, HBRUSH,
+    HDC, HFONT, HPEN, MONITORINFO, MONITOR_DEFAULTTONEAREST, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Registry::{
@@ -737,30 +737,43 @@ unsafe extern "system" fn native_card_window_proc(
                         dot_size,
                     );
 
-                    // 动作名称
+                    // 动作名称 (像素级精确测量排版)
                     let font_bold = SelectObject(dc, state.font_ui_bold.into());
-                    let _ = SetTextColor(dc, state.theme.text_primary);
                     let mut title_buf = wide(&state.data.action_name);
+                    let title_slice = &title_buf[..title_buf.len().saturating_sub(1)];
+                    let mut title_size = SIZE::default();
+                    let _ = GetTextExtentPoint32W(dc, title_slice, &mut title_size);
+
+                    let title_x = dot_x + dot_size + scale(8, dpi);
+                    let title_w = title_size.cx;
                     let mut title_rect = RECT {
-                        left: dot_x + dot_size + scale(6, dpi),
+                        left: title_x,
                         top: 0,
-                        right: client_rect_paint.right / 2,
+                        right: title_x + title_w,
                         bottom: header_h,
                     };
+                    let _ = SetTextColor(dc, state.theme.text_primary);
                     let _ = DrawTextW(
                         dc,
                         &mut title_buf,
                         &mut title_rect,
                         windows::Win32::Graphics::Gdi::DRAW_TEXT_FORMAT(
-                            DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0 | DT_END_ELLIPSIS.0,
+                            DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0,
                         ),
                     );
 
-                    // 计算已复制徽章位置
-                    let title_len = state.data.action_name.chars().count() as i32;
-                    let badge_x = title_rect.left + scale(title_len * 13, dpi).min(scale(110, dpi));
-                    let badge_w = scale(54, dpi);
+                    // 徽章文字与精确背景 (紧跟在动作名称后，绝不重叠)
+                    let is_en = state.data.language == "en";
+                    let mut badge_text = wide(if is_en { "✓ Copied" } else { "✓ 已复制" });
+                    let badge_slice = &badge_text[..badge_text.len().saturating_sub(1)];
+                    let font_small = SelectObject(dc, state.font_ui_small.into());
+                    let mut badge_text_size = SIZE::default();
+                    let _ = GetTextExtentPoint32W(dc, badge_slice, &mut badge_text_size);
+
+                    let badge_pad_x = scale(6, dpi);
+                    let badge_w = badge_text_size.cx + badge_pad_x * 2;
                     let badge_h = scale(20, dpi);
+                    let badge_x = title_x + title_w + scale(8, dpi);
                     let badge_y = (header_h - badge_h) / 2;
 
                     let _ = SelectObject(dc, state.theme.pen_badge_success.into());
@@ -775,17 +788,13 @@ unsafe extern "system" fn native_card_window_proc(
                         scale(4, dpi),
                     );
 
-                    // 徽章文字 "✓ 已复制"
-                    let is_en = state.data.language == "en";
-                    let mut badge_text = wide(if is_en { "✓ Copied" } else { "✓ 已复制" });
+                    let _ = SetTextColor(dc, state.theme.badge_success_text);
                     let mut badge_text_rect = RECT {
                         left: badge_x,
                         top: badge_y,
                         right: badge_x + badge_w,
                         bottom: badge_y + badge_h,
                     };
-                    let font_small = SelectObject(dc, state.font_ui_small.into());
-                    let _ = SetTextColor(dc, state.theme.badge_success_text);
                     let _ = DrawTextW(
                         dc,
                         &mut badge_text,
@@ -797,12 +806,20 @@ unsafe extern "system" fn native_card_window_proc(
                         ),
                     );
 
-                    // 模型标签 (右侧)
+                    // 模型标签 (动态利用中间空余空间完整显示)
                     let close_btn_w = scale(28, dpi);
-                    let model_max_w = scale(130, dpi);
                     let model_right = client_rect_paint.right - pad - close_btn_w;
-                    let model_left = model_right - model_max_w;
+                    let font_mono = SelectObject(dc, state.font_mono.into());
                     let mut model_buf = wide(&state.data.model);
+                    let model_slice = &model_buf[..model_buf.len().saturating_sub(1)];
+                    let mut model_size = SIZE::default();
+                    let _ = GetTextExtentPoint32W(dc, model_slice, &mut model_size);
+
+                    let badge_right = badge_x + badge_w + scale(12, dpi);
+                    let max_model_available = (model_right - badge_right).max(0);
+                    let model_w = model_size.cx.min(max_model_available);
+                    let model_left = model_right - model_w;
+
                     let mut model_rect = RECT {
                         left: model_left,
                         top: 0,
@@ -810,7 +827,6 @@ unsafe extern "system" fn native_card_window_proc(
                         bottom: header_h,
                     };
                     let _ = SetTextColor(dc, state.theme.text_tertiary);
-                    let font_mono = SelectObject(dc, state.font_mono.into());
                     let _ = DrawTextW(
                         dc,
                         &mut model_buf,
