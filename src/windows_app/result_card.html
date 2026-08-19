@@ -114,9 +114,9 @@
       position: relative;
     }
 
-    /* 顶部元信息栏 (紧凑、专业工具质感) */
+    /* 顶部元信息栏 (紧凑、专业工具质感，弹性防挤压重叠) */
     .title-bar {
-      height: 40px;
+      height: 38px;
       padding: 0 12px;
       display: flex;
       align-items: center;
@@ -124,14 +124,18 @@
       background: var(--surface-elevated);
       border-bottom: 1px solid var(--border-subtle);
       flex-shrink: 0;
-      gap: 10px;
+      gap: 8px;
+      min-width: 0;
+      overflow: hidden;
     }
 
     .meta-group {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       min-width: 0;
+      flex: 1 1 auto;
+      overflow: hidden;
     }
 
     .action-badge {
@@ -143,6 +147,7 @@
       align-items: center;
       gap: 6px;
       white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .action-badge .indicator-dot {
@@ -165,6 +170,7 @@
       align-items: center;
       gap: 4px;
       line-height: 1.4;
+      white-space: nowrap;
       flex-shrink: 0;
     }
 
@@ -172,6 +178,16 @@
       width: 10px;
       height: 10px;
       stroke-width: 2.5;
+    }
+
+    .tool-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 1 auto;
+      min-width: 0;
+      max-width: 50%;
+      justify-content: flex-end;
     }
 
     .model-tag {
@@ -182,17 +198,13 @@
       border: 1px solid var(--border-subtle);
       padding: 2px 6px;
       border-radius: var(--radius-sm);
-      max-width: 140px;
+      min-width: 0;
+      max-width: 160px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-    }
-
-    .tool-group {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-shrink: 0;
+      flex-shrink: 1;
+      cursor: default;
     }
 
     .btn-close {
@@ -454,11 +466,11 @@
         </div>
         <div class="status-pill">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          <span id="statusText">已复制到剪贴板</span>
+          <span id="statusText">已复制</span>
         </div>
       </div>
       <div class="tool-group">
-        <span class="model-tag" id="modelTag">gpt-4o-mini</span>
+        <span class="model-tag" id="modelTag" title="模型名称">gpt-4o-mini</span>
         <button class="btn-close" id="btnClose" title="关闭 (Esc)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>
@@ -597,6 +609,7 @@
 
       el.actionTitle.textContent = data.action_name || (currentLanguage === 'en' ? 'Action Result' : '处理结果');
       el.modelTag.textContent = data.model || 'model';
+      el.modelTag.title = `模型: ${data.model || 'model'}`;
       el.editor.value = data.result_text || '';
       updateMetrics();
 
@@ -611,12 +624,12 @@
       }
 
       if (currentLanguage === 'en') {
-        el.statusText.textContent = 'Copied to clipboard';
+        el.statusText.textContent = 'Copied';
         el.sourceToggleLabel.textContent = isDrawerOpen ? 'Hide Input Selection' : 'View Input Selection';
         el.btnRetryLabel.textContent = 'Regenerate';
         el.btnCopyLabel.textContent = 'Copy';
       } else {
-        el.statusText.textContent = '已复制到剪贴板';
+        el.statusText.textContent = '已复制';
         el.sourceToggleLabel.textContent = isDrawerOpen ? '收起输入选区' : '查看输入选区';
         el.btnRetryLabel.textContent = '重试';
         el.btnCopyLabel.textContent = '复制修改';

@@ -38,7 +38,7 @@ pub const WM_RETRY_ACTION: u32 = WM_APP + 31;
 const CLASS_NAME: PCWSTR = w!("TextPilot.ResultCardWindow");
 const RESULT_CARD_HTML: &str = include_str!("result_card.html");
 
-const DEFAULT_CARD_WIDTH: i32 = 480;
+const DEFAULT_CARD_WIDTH: i32 = 520;
 const DEFAULT_CARD_HEIGHT: i32 = 320;
 
 static ACTIVE_RESULT_CARD_HWND: Mutex<Option<isize>> = Mutex::new(None);
