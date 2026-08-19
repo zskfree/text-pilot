@@ -333,6 +333,7 @@ impl ConfigError {
 
 fn english_config_detail(message: &str) -> String {
     let exact = match message {
+        "result_mode 不支持该模式" => Some("Unsupported result_mode"),
         "result_mode 仅支持 clipboard" => Some("result_mode currently supports only clipboard"),
         "至少需要一个 API 配置" => Some("At least one API profile is required"),
         "API 配置最多保存 20 个" => Some("At most 20 API profiles can be saved"),
@@ -653,8 +654,8 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<(), ConfigError> {
-        if self.result_mode != "clipboard" {
-            return Err(ConfigError::Invalid("result_mode 仅支持 clipboard".into()));
+        if self.result_mode != "clipboard" && self.result_mode != "card" && self.result_mode != "both" {
+            return Err(ConfigError::Invalid("result_mode 不支持该模式".into()));
         }
         if self.api_profiles.is_empty() {
             return Err(ConfigError::Invalid("至少需要一个 API 配置".into()));
@@ -1169,9 +1170,16 @@ mod tests {
     }
 
     #[test]
-    fn supports_clipboard_result_mode() {
-        let config = Config::default();
+    fn supports_clipboard_and_card_result_modes() {
+        let mut config = Config::default();
+        config.result_mode = "clipboard".into();
         assert!(config.validate().is_ok());
+        config.result_mode = "card".into();
+        assert!(config.validate().is_ok());
+        config.result_mode = "both".into();
+        assert!(config.validate().is_ok());
+        config.result_mode = "invalid_mode".into();
+        assert!(config.validate().is_err());
     }
 
     #[test]

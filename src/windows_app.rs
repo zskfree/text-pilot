@@ -1,4 +1,5 @@
 mod clipboard;
+mod result_card;
 mod selection;
 mod settings;
 mod startup;
@@ -302,7 +303,10 @@ enum WorkerCommand {
 enum WorkerResult {
     ExecuteAction {
         task_id: u64,
+        action_id: String,
         action_name: String,
+        model_name: String,
+        original_text: String,
         result: Result<String, String>,
     },
     TestApi {
@@ -333,6 +337,7 @@ struct AppState {
     icon: HICON,
     taskbar_created: u32,
     settings_hwnd: HWND,
+    last_triggered_action: Option<(usize, ActionTier, String)>,
 }
 
 fn idle_tooltip_text(config: &Config) -> String {
@@ -412,6 +417,7 @@ pub fn run() -> Result<(), AppError> {
         icon,
         taskbar_created: unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) },
         settings_hwnd: HWND::default(),
+        last_triggered_action: None,
     });
     unsafe {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, (&mut *state as *mut AppState) as isize);
@@ -756,6 +762,49 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
                 }
                 return LRESULT(0);
             }
+            result_card::WM_RESULT_CARD_CLOSED => {
+                return LRESULT(0);
+            }
+            result_card::WM_RETRY_ACTION => {
+                if let Some((action_index, tier, text)) = state.last_triggered_action.clone() {
+                    if !state.busy {
+                        if let Some(action) = state.config.actions.get(action_index).cloned() {
+                            let task_id = state.next_task_id;
+                            state.next_task_id = state.next_task_id.wrapping_add(1).max(1);
+                            state.busy = true;
+                            state.active_task_id = Some(task_id);
+                            let action_name = action.name.clone();
+                            let message = match tier {
+                                ActionTier::Standard => i18n::format(
+                                    state.config.ui_language,
+                                    Message::Processing,
+                                    &action_name,
+                                ),
+                                ActionTier::Deep => i18n::format(
+                                    state.config.ui_language,
+                                    Message::ProcessingDeep,
+                                    &action_name,
+                                ),
+                            };
+                            let command = WorkerCommand::ExecuteAction {
+                                task_id,
+                                action,
+                                tier,
+                                config: state.config.clone(),
+                                text,
+                            };
+                            if state.worker_tx.send(command).is_ok() {
+                                update_tooltip(hwnd, state.icon, &message);
+                                show_status_popup(&message, StatusKind::Progress, true);
+                            } else {
+                                state.busy = false;
+                                state.active_task_id = None;
+                            }
+                        }
+                    }
+                }
+                return LRESULT(0);
+            }
             WM_DESTROY => {
                 PostQuitMessage(0);
                 return LRESULT(0);
@@ -808,6 +857,7 @@ unsafe fn on_action_triggered(
     }
     match selection::read_selected_text() {
         Ok(Some(text)) => {
+            state.last_triggered_action = Some((action_index, tier, text.clone()));
             let task_id = state.next_task_id;
             state.next_task_id = state.next_task_id.wrapping_add(1).max(1);
             state.busy = true;
@@ -868,7 +918,10 @@ unsafe fn on_worker_done(hwnd: HWND, state: &mut AppState) {
     match result {
         WorkerResult::ExecuteAction {
             task_id,
+            action_id,
             action_name,
+            model_name,
+            original_text,
             result,
         } => {
             if state.active_task_id != Some(task_id) {
@@ -883,10 +936,20 @@ unsafe fn on_worker_done(hwnd: HWND, state: &mut AppState) {
                         if state.config.play_sound {
                             let _ = MessageBeep(MB_OK);
                         }
-                        show_status_popup(
-                            i18n::text(state.config.ui_language, Message::Copied),
-                            StatusKind::Success,
-                            false,
+                        let lang_code = match state.config.ui_language {
+                            UiLanguage::English => "en",
+                            UiLanguage::ChineseSimplified => "zh-CN",
+                        };
+                        result_card::show_result_card(
+                            hwnd,
+                            result_card::ResultCardData {
+                                language: lang_code.to_string(),
+                                action_id,
+                                action_name,
+                                model: model_name,
+                                original_text,
+                                result_text: text,
+                            },
                         );
                     }
                     Err(error) => notify(
@@ -1218,7 +1281,19 @@ fn start_worker(
                     config,
                     text,
                 } => {
+                    let action_id = action.id.clone();
                     let action_name = action.name.clone();
+                    let model_name = if !action.model.trim().is_empty() {
+                        action.model.clone()
+                    } else {
+                        config
+                            .api_profiles
+                            .iter()
+                            .find(|p| p.name.eq_ignore_ascii_case(&action.profile))
+                            .map(|p| p.model.clone())
+                            .unwrap_or_else(|| "default".into())
+                    };
+                    let original_text = text.clone();
                     let result = recover_worker_operation(config.ui_language, || {
                         client
                             .execute_action_request(&config, &action, tier, &text, task_id)
@@ -1227,7 +1302,10 @@ fn start_worker(
                     if result_tx
                         .send(WorkerResult::ExecuteAction {
                             task_id,
+                            action_id,
                             action_name,
+                            model_name,
+                            original_text,
                             result,
                         })
                         .is_err()
