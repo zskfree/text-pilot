@@ -4,7 +4,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::sync::Mutex;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{
-    COLORREF, HINSTANCE, HMENU, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
+    COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
 use windows::Win32::Graphics::Dwm::{
     DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
@@ -21,17 +21,18 @@ use windows::Win32::System::Registry::{
     RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ, REG_DWORD,
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_ESCAPE, VK_RETURN};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetKeyState, SetFocus, VK_CONTROL, VK_ESCAPE, VK_RETURN,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     CallWindowProcW, CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetCursorPos,
-    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, IsWindow, LoadCursorW, PostMessageW,
-    RegisterClassW, SendMessageW, SetFocus, SetForegroundWindow, SetWindowLongPtrW, ShowWindow,
-    CREATESTRUCTW, EM_SETSEL, ES_AUTOVSCROLL, ES_MULTILINE, ES_WANTRETURN, GWLP_USERDATA,
-    GWLP_WNDPROC, IDC_ARROW, SW_SHOW, WA_INACTIVE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_ACTIVATE,
-    WM_APP, WM_COMMAND, WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DESTROY,
-    WM_ERASEBKGND, WM_KEYDOWN, WM_NCCREATE, WM_PAINT, WM_SETFONT, WNDCLASSW, WNDPROC, WS_CHILD,
-    WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_TABSTOP, WS_VISIBLE,
-    WS_VSCROLL,
+    GetParent, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, IsWindow, LoadCursorW,
+    PostMessageW, RegisterClassW, SendMessageW, SetForegroundWindow, SetWindowLongPtrW, ShowWindow,
+    CREATESTRUCTW, GWLP_USERDATA, GWLP_WNDPROC, HMENU, IDC_ARROW, SW_SHOW, WA_INACTIVE,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WM_ACTIVATE, WM_APP, WM_COMMAND, WM_CREATE, WM_CTLCOLOREDIT,
+    WM_CTLCOLORSTATIC, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_NCCREATE, WM_PAINT, WM_SETFONT,
+    WNDCLASSW, WNDPROC, WS_CHILD, WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 
 pub const WM_RESULT_CARD_CLOSED: u32 = WM_APP + 30;
@@ -45,6 +46,11 @@ const IDC_EDIT: usize = 1001;
 const IDC_BTN_RETRY: usize = 1002;
 const IDC_BTN_COPY: usize = 1003;
 const IDC_BTN_CLOSE: usize = 1004;
+
+const EM_SETSEL: u32 = 0x00B1;
+const ES_MULTILINE: u32 = 0x0004;
+const ES_AUTOVSCROLL: u32 = 0x0040;
+const ES_WANTRETURN: u32 = 0x1000;
 
 static ACTIVE_RESULT_CARD_HWND: Mutex<Option<isize>> = Mutex::new(None);
 
@@ -336,7 +342,7 @@ fn is_system_dark_mode() -> bool {
         RegOpenKeyExW(
             HKEY_CURRENT_USER,
             PCWSTR(subkey.as_ptr()),
-            0,
+            Some(0),
             KEY_READ,
             &mut key,
         )
@@ -385,13 +391,20 @@ unsafe fn create_gdi_font(name: &str, height_pt: i32, weight: i32, dpi: u32) -> 
     )
 }
 
+unsafe fn send_msg(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    SendMessageW(hwnd, msg, Some(wparam), Some(lparam))
+}
+
 unsafe extern "system" fn edit_subclass_proc(
     hwnd: HWND,
     msg: u32,
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    let parent = windows::Win32::UI::WindowsAndMessaging::GetParent(hwnd);
+    let parent = match GetParent(hwnd) {
+        Ok(p) => p,
+        Err(_) => return DefWindowProcW(hwnd, msg, wparam, lparam),
+    };
     let state_ptr = GetWindowLongPtrW(parent, GWLP_USERDATA) as *mut NativeCardState;
 
     if msg == WM_KEYDOWN {
@@ -492,7 +505,10 @@ unsafe extern "system" fn native_card_window_proc(
                     let edit_h =
                         (client_rect.bottom - client_rect.top) - edit_y - footer_h - scale(8, dpi);
 
-                    let module = GetModuleHandleW(None).unwrap_or(HINSTANCE(std::ptr::null_mut()));
+                    let module = match GetModuleHandleW(None) {
+                        Ok(handle) => HINSTANCE(handle.0),
+                        Err(_) => HINSTANCE(std::ptr::null_mut()),
+                    };
                     let wide_content = wide(&state.data.result_text);
 
                     let edit_hwnd = CreateWindowExW(
@@ -502,9 +518,9 @@ unsafe extern "system" fn native_card_window_proc(
                         WINDOW_STYLE(
                             WS_CHILD.0
                                 | WS_VISIBLE.0
-                                | ES_MULTILINE.0
-                                | ES_AUTOVSCROLL.0
-                                | ES_WANTRETURN.0
+                                | ES_MULTILINE
+                                | ES_AUTOVSCROLL
+                                | ES_WANTRETURN
                                 | WS_VSCROLL.0
                                 | WS_TABSTOP.0,
                         ),
@@ -514,7 +530,7 @@ unsafe extern "system" fn native_card_window_proc(
                         edit_h,
                         Some(hwnd),
                         Some(HMENU(IDC_EDIT as *mut c_void)),
-                        Some(HINSTANCE(module.0)),
+                        Some(module),
                         None,
                     )
                     .unwrap_or_default();
@@ -527,7 +543,7 @@ unsafe extern "system" fn native_card_window_proc(
                     state.orig_edit_proc = std::mem::transmute(orig_proc);
                     state.edit_hwnd = edit_hwnd;
 
-                    let _ = SendMessageW(
+                    let _ = send_msg(
                         edit_hwnd,
                         WM_SETFONT,
                         WPARAM(state.font_mono.0 as usize),
@@ -558,7 +574,7 @@ unsafe extern "system" fn native_card_window_proc(
                         btn_h,
                         Some(hwnd),
                         Some(HMENU(IDC_BTN_RETRY as *mut c_void)),
-                        Some(HINSTANCE(module.0)),
+                        Some(module),
                         None,
                     )
                     .unwrap_or_default();
@@ -574,7 +590,7 @@ unsafe extern "system" fn native_card_window_proc(
                         btn_h,
                         Some(hwnd),
                         Some(HMENU(IDC_BTN_COPY as *mut c_void)),
-                        Some(HINSTANCE(module.0)),
+                        Some(module),
                         None,
                     )
                     .unwrap_or_default();
@@ -595,33 +611,33 @@ unsafe extern "system" fn native_card_window_proc(
                         close_size,
                         Some(hwnd),
                         Some(HMENU(IDC_BTN_CLOSE as *mut c_void)),
-                        Some(HINSTANCE(module.0)),
+                        Some(module),
                         None,
                     )
                     .unwrap_or_default();
 
-                    let _ = SendMessageW(
+                    let _ = send_msg(
                         state.btn_retry_hwnd,
                         WM_SETFONT,
                         WPARAM(state.font_ui_normal.0 as usize),
                         LPARAM(1),
                     );
-                    let _ = SendMessageW(
+                    let _ = send_msg(
                         state.btn_copy_hwnd,
                         WM_SETFONT,
                         WPARAM(state.font_ui_bold.0 as usize),
                         LPARAM(1),
                     );
-                    let _ = SendMessageW(
+                    let _ = send_msg(
                         state.btn_close_hwnd,
                         WM_SETFONT,
                         WPARAM(state.font_ui_small.0 as usize),
                         LPARAM(1),
                     );
 
-                    // 自动全选或光标移至末尾，聚焦编辑框
+                    // 光标移至末尾，聚焦编辑框
                     let text_len = state.data.result_text.encode_utf16().count();
-                    let _ = SendMessageW(
+                    let _ = send_msg(
                         edit_hwnd,
                         EM_SETSEL,
                         WPARAM(text_len),
@@ -678,12 +694,12 @@ unsafe extern "system" fn native_card_window_proc(
                 WM_PAINT => {
                     let mut paint = PAINTSTRUCT::default();
                     let dc = BeginPaint(hwnd, &mut paint);
-                    let mut rect = RECT::default();
-                    let _ = GetClientRect(hwnd, &mut rect);
+                    let mut client_rect_paint = RECT::default();
+                    let _ = GetClientRect(hwnd, &mut client_rect_paint);
                     let dpi = GetDpiForWindow(hwnd).max(96);
 
                     // 1. 绘制整体外壳底色
-                    let _ = FillRect(dc, &rect, state.theme.brush_shell);
+                    let _ = FillRect(dc, &client_rect_paint, state.theme.brush_shell);
 
                     let header_h = scale(38, dpi);
                     let footer_h = scale(44, dpi);
@@ -693,7 +709,7 @@ unsafe extern "system" fn native_card_window_proc(
                     let header_rect = RECT {
                         left: 0,
                         top: 0,
-                        right: rect.right,
+                        right: client_rect_paint.right,
                         bottom: header_h,
                     };
                     let _ = FillRect(dc, &header_rect, state.theme.brush_bar);
@@ -701,7 +717,7 @@ unsafe extern "system" fn native_card_window_proc(
                     // Header 分割线
                     let old_pen = SelectObject(dc, state.theme.pen_border.into());
                     windows::Win32::Graphics::Gdi::MoveToEx(dc, 0, header_h, None);
-                    windows::Win32::Graphics::Gdi::LineTo(dc, rect.right, header_h);
+                    windows::Win32::Graphics::Gdi::LineTo(dc, client_rect_paint.right, header_h);
 
                     // 3. 绘制 Header 文本与徽章
                     let _ = SetBkMode(dc, TRANSPARENT);
@@ -728,7 +744,7 @@ unsafe extern "system" fn native_card_window_proc(
                     let mut title_rect = RECT {
                         left: dot_x + dot_size + scale(6, dpi),
                         top: 0,
-                        right: rect.right / 2,
+                        right: client_rect_paint.right / 2,
                         bottom: header_h,
                     };
                     let _ = DrawTextW(
@@ -784,7 +800,7 @@ unsafe extern "system" fn native_card_window_proc(
                     // 模型标签 (右侧)
                     let close_btn_w = scale(28, dpi);
                     let model_max_w = scale(130, dpi);
-                    let model_right = rect.right - pad - close_btn_w;
+                    let model_right = client_rect_paint.right - pad - close_btn_w;
                     let model_left = model_right - model_max_w;
                     let mut model_buf = wide(&state.data.model);
                     let mut model_rect = RECT {
@@ -810,16 +826,16 @@ unsafe extern "system" fn native_card_window_proc(
                     // 4. 绘制 Footer 条
                     let footer_rect = RECT {
                         left: 0,
-                        top: rect.bottom - footer_h,
-                        right: rect.right,
-                        bottom: rect.bottom,
+                        top: client_rect_paint.bottom - footer_h,
+                        right: client_rect_paint.right,
+                        bottom: client_rect_paint.bottom,
                     };
                     let _ = FillRect(dc, &footer_rect, state.theme.brush_bar);
 
                     // Footer 顶部分割线
                     let _ = SelectObject(dc, state.theme.pen_border.into());
-                    windows::Win32::Graphics::Gdi::MoveToEx(dc, 0, rect.bottom - footer_h, None);
-                    windows::Win32::Graphics::Gdi::LineTo(dc, rect.right, rect.bottom - footer_h);
+                    windows::Win32::Graphics::Gdi::MoveToEx(dc, 0, client_rect_paint.bottom - footer_h, None);
+                    windows::Win32::Graphics::Gdi::LineTo(dc, client_rect_paint.right, client_rect_paint.bottom - footer_h);
 
                     // Footer 统计文字（字符 / 行数）
                     let char_count = state.data.result_text.chars().count();
@@ -828,9 +844,9 @@ unsafe extern "system" fn native_card_window_proc(
                     let mut stats_buf = wide(&stats_str);
                     let mut stats_rect = RECT {
                         left: pad,
-                        top: rect.bottom - footer_h,
-                        right: rect.right - scale(180, dpi),
-                        bottom: rect.bottom,
+                        top: client_rect_paint.bottom - footer_h,
+                        right: client_rect_paint.right - scale(180, dpi),
+                        bottom: client_rect_paint.bottom,
                     };
                     let _ = SetTextColor(dc, state.theme.text_tertiary);
                     let _ = SelectObject(dc, state.font_ui_small.into());
