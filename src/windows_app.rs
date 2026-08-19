@@ -936,6 +936,7 @@ unsafe fn on_worker_done(hwnd: HWND, state: &mut AppState) {
                         if state.config.play_sound {
                             let _ = MessageBeep(MB_OK);
                         }
+                        hide_status_popup();
                         let lang_code = match state.config.ui_language {
                             UiLanguage::English => "en",
                             UiLanguage::ChineseSimplified => "zh-CN",
@@ -2063,6 +2064,23 @@ unsafe extern "system" fn status_popup_timer(hwnd: HWND, _: u32, _: usize, _: u3
     if let Ok(mut state) = STATUS_POPUP.lock() {
         if state.hwnd == hwnd.0 as isize {
             state.visible = false;
+        }
+    }
+}
+
+fn hide_status_popup() {
+    let hwnd = match STATUS_POPUP.lock() {
+        Ok(mut state) => {
+            state.visible = false;
+            state.hwnd
+        }
+        Err(_) => return,
+    };
+    if hwnd != 0 {
+        let popup = HWND(hwnd as *mut c_void);
+        unsafe {
+            let _ = KillTimer(Some(popup), 1);
+            let _ = ShowWindow(popup, SW_HIDE);
         }
     }
 }
