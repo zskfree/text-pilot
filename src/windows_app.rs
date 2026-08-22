@@ -818,6 +818,12 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
     DefWindowProcW(hwnd, message, wparam, lparam)
 }
 
+fn action_api_key_is_configured(config: &Config, action: &CustomAction) -> bool {
+    config
+        .action_api(action)
+        .is_some_and(|api| !api.api_key.trim().is_empty())
+}
+
 unsafe fn on_action_triggered(
     hwnd: HWND,
     state: &mut AppState,
@@ -841,11 +847,7 @@ unsafe fn on_action_triggered(
     if !action.enabled {
         return;
     }
-    if state
-        .config
-        .active_api()
-        .is_none_or(|api| api.api_key.trim().is_empty())
-    {
+    if !action_api_key_is_configured(&state.config, &action) {
         notify(
             hwnd,
             state.icon,
@@ -2161,6 +2163,42 @@ pub fn show_fatal_error(message: &str) {
 #[cfg(test)]
 mod status_popup_tests {
     use super::*;
+
+    #[test]
+    fn action_bound_to_configured_non_active_profile_is_usable() {
+        let mut config = Config::default();
+        config.active_api_mut().unwrap().api_key.clear();
+        config.api_profiles.push(config::ApiProfile {
+            name: "one-api".into(),
+            api_key: "configured-key".into(),
+            base_url: "https://one-api.example/v1".into(),
+            models: vec!["gemini-3.5-flash-lite".into()],
+            model: "gemini-3.5-flash-lite".into(),
+            translation_model: "gemini-3.5-flash-lite".into(),
+            temperature: 0.3,
+            max_tokens: 512,
+        });
+        let action = config
+            .find_action_mut(config::DEFAULT_OPTIMIZE_ACTION_ID)
+            .unwrap();
+        action.profile = "one-api".into();
+        action.model = "gemini-3.5-flash-lite".into();
+        let action = config
+            .find_action(config::DEFAULT_OPTIMIZE_ACTION_ID)
+            .unwrap();
+
+        assert!(action_api_key_is_configured(&config, action));
+    }
+
+    #[test]
+    fn action_bound_to_profile_without_api_key_is_not_usable() {
+        let config = Config::default();
+        let action = config
+            .find_action(config::DEFAULT_OPTIMIZE_ACTION_ID)
+            .unwrap();
+
+        assert!(!action_api_key_is_configured(&config, action));
+    }
 
     #[test]
     fn status_popup_paints_without_blocking_the_ui_thread() {
